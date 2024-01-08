@@ -3,7 +3,7 @@ extern crate crc32fast;
 
 use bit_set::BitSet;
 use crc32fast::Hasher;
-use io::{BufReader};
+use io::BufReader;
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{stdin, stdout, BufRead, Write};
@@ -26,8 +26,16 @@ fn generate_bloom_filter(lines: Vec<&str>, bits_size: usize) -> BitSet {
     bloom_filter
 }
 
-fn save_bloom_filter(bloom_filter: &BitSet, file_path: &str, lines_inserted: usize) -> Result<(), std::io::Error> {
-    let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(file_path)?;
+fn save_bloom_filter(
+    bloom_filter: &BitSet,
+    file_path: &str,
+    lines_inserted: usize,
+) -> Result<(), std::io::Error> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(file_path)?;
 
     // Insert lines_inserted value at the beginning of the file
     writeln!(file, "{}", lines_inserted)?;
@@ -56,9 +64,9 @@ fn load_bloom_filter(file_path: &str) -> Result<(BitSet, usize), io::Error> {
         // Read the first line as lines_inserted
         let mut lines = io::BufReader::new(file).lines();
         if let Some(Ok(value)) = lines.next() {
-            lines_inserted = value.parse().map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, e)
-            })?;
+            lines_inserted = value
+                .parse()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
 
         // Read the remaining lines as Bloom filter data
@@ -99,31 +107,43 @@ fn main() {
                     std::process::exit(1);
                 });
                 file_paths.push(file_path);
-            },
+            }
             "-b" | "--bits" => {
-                let bits_size = env::args().nth(idx + 1).unwrap_or_else(|| {
-                    eprintln!("Error: No bits size provided after -b or --bits parameter.");
-                    std::process::exit(1);
-                }).parse().unwrap_or_else(|_| {
-                    eprintln!("Error: Bits size must be a positive integer.");
-                    std::process::exit(1);
-                });
+                let bits_size = env::args()
+                    .nth(idx + 1)
+                    .unwrap_or_else(|| {
+                        eprintln!("Error: No bits size provided after -b or --bits parameter.");
+                        std::process::exit(1);
+                    })
+                    .parse()
+                    .unwrap_or_else(|_| {
+                        eprintln!("Error: Bits size must be a positive integer.");
+                        std::process::exit(1);
+                    });
                 bits_sizes.push(bits_size);
-            },
+            }
             "-w" | "--write" => write_mode = true,
             "-l" | "--limit" => {
-                limit = Some(env::args().nth(idx + 1).unwrap_or_else(|| {
-                    eprintln!("Error: No limit value provided after -l or --limit parameter.");
-                    std::process::exit(1);
-                }).parse().unwrap_or_else(|_| {
-                    eprintln!("Error: Limit must be a positive integer.");
-                    std::process::exit(1);
-                }));
-            },
+                limit = Some(
+                    env::args()
+                        .nth(idx + 1)
+                        .unwrap_or_else(|| {
+                            eprintln!(
+                                "Error: No limit value provided after -l or --limit parameter."
+                            );
+                            std::process::exit(1);
+                        })
+                        .parse()
+                        .unwrap_or_else(|_| {
+                            eprintln!("Error: Limit must be a positive integer.");
+                            std::process::exit(1);
+                        }),
+                );
+            }
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
-            },
+            }
             _ => (),
         }
     }
@@ -152,13 +172,15 @@ fn main() {
                 std::process::exit(1);
             }
         }
-    }
-    else {
+    } else {
         if let Ok((mut bloom_filter, mut current_lines_inserted)) = load_bloom_filter(&file_path) {
             // ...
         } else {
             // Handle the case where loading the Bloom filter fails
-            eprintln!("Error: Failed to load Bloom filter from file: {}", file_path);
+            eprintln!(
+                "Error: Failed to load Bloom filter from file: {}",
+                file_path
+            );
             std::process::exit(1);
         }
     }
@@ -178,14 +200,21 @@ fn main() {
         if let Some(limit_value) = limit {
             if current_lines_inserted >= limit_value {
                 // If the limit is reached, print the number of lines inserted and exit
-                println!("Lines inserted into Bloom filter: {}", current_lines_inserted);
+                println!(
+                    "Lines inserted into Bloom filter: {}",
+                    current_lines_inserted
+                );
                 if write_mode {
                     // @todo: Find first file which is not full and can be written.
                     for (i, file_path) in file_paths.iter().enumerate() {
-                        save_bloom_filter(&bloom_filter, &file_path, current_lines_inserted).unwrap_or_else(|err| {
-                            eprintln!("Error: Failed to save Bloom filter to file: {}: {}", file_path, err);
-                            std::process::exit(1);
-                        });
+                        save_bloom_filter(&bloom_filter, &file_path, current_lines_inserted)
+                            .unwrap_or_else(|err| {
+                                eprintln!(
+                                    "Error: Failed to save Bloom filter to file: {}: {}",
+                                    file_path, err
+                                );
+                                std::process::exit(1);
+                            });
                     }
                 }
                 return;
