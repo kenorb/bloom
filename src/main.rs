@@ -1,11 +1,13 @@
 extern crate bit_set;
+extern crate crc32fast;
 
-use std::env;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, Seek, SeekFrom, Write};
-use std::path::Path;
 use bit_set::BitSet;
 use crc32fast::Hasher;
+use io::{BufReader};
+use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::{stdin, stdout, BufRead, Write};
+use std::path::Path;
 
 fn calculate_crc32(data: &[u8]) -> u32 {
     let mut hasher = Hasher::new();
@@ -24,7 +26,7 @@ fn generate_bloom_filter(lines: Vec<&str>, bits_size: usize) -> BitSet {
     bloom_filter
 }
 
-fn save_bloom_filter(bloom_filter: &BitSet, file_path: &str, lines_inserted: usize) -> Result<(), io::Error> {
+fn save_bloom_filter(bloom_filter: &BitSet, file_path: &str, lines_inserted: usize) -> Result<(), std::io::Error> {
     let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(file_path)?;
 
     // Insert lines_inserted value at the beginning of the file
@@ -38,7 +40,7 @@ fn save_bloom_filter(bloom_filter: &BitSet, file_path: &str, lines_inserted: usi
     Ok(())
 }
 
-fn create_empty_bloom_filter_file(file_path: &str, bits_size: usize) -> Result<(), io::Error> {
+fn write_mode_bloom_filter_file(file_path: &str, bits_size: usize) -> Result<(), std::io::Error> {
     let bloom_filter = BitSet::with_capacity(bits_size);
     save_bloom_filter(&bloom_filter, file_path, 0)?;
     Ok(())
@@ -54,7 +56,9 @@ fn load_bloom_filter(file_path: &str) -> Result<(BitSet, usize), io::Error> {
         // Read the first line as lines_inserted
         let mut lines = io::BufReader::new(file).lines();
         if let Some(Ok(value)) = lines.next() {
-            lines_inserted = value.parse()?;
+            lines_inserted = value.parse().map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, e)
+            })?;
         }
 
         // Read the remaining lines as Bloom filter data
@@ -82,7 +86,7 @@ fn print_help() {
 fn main() {
     let mut file_paths = Vec::new();
     let mut bits_sizes = Vec::new();
-    let mut create_empty = false;
+    let mut write_mode = false;
     let mut lines_inserted = 0;
     let mut limit = None;
 
@@ -106,7 +110,7 @@ fn main() {
                 });
                 bits_sizes.push(bits_size);
             },
-            "-w" | "--write" => create_empty = true,
+            "-w" | "--write" => write_mode = true,
             "-l" | "--limit" => {
                 limit = Some(env::args().nth(idx + 1).unwrap_or_else(|| {
                     eprintln!("Error: No limit value provided after -l or --limit parameter.");
@@ -134,50 +138,57 @@ fn main() {
         std::process::exit(1);
     }
 
-    for (i, file_path) in file_paths.iter().enumerate() {
-        let bits_size = if bits_sizes.is_empty() {
-            1_000_000 // Default bits size
-        } else {
-            bits_sizes[i]
-        };
+    if write_mode {
+        for (i, file_path) in file_paths.iter().enumerate() {
+            let bits_size = if bits_sizes.is_empty() {
+                1_000_000 // Default bits size
+            } else {
+                bits_sizes[i]
+            };
 
-        if create_empty {
             // Create an empty Bloom filter file or update an existing one
-            if let Err(err) = create_empty_bloom_filter_file(&file_path, bits_size) {
+            if let Err(err) = write_mode_bloom_filter_file(&file_path, bits_size) {
                 eprintln!("Error: {}", err);
                 std::process::exit(1);
             }
+        }
+    }
+    else {
+        if let Ok((mut bloom_filter, mut current_lines_inserted)) = load_bloom_filter(&file_path) {
+            // ...
         } else {
-            if let Ok((mut bloom_filter, mut current_lines_inserted)) = load_bloom_filter(&file_path) {
-                // Read lines from standard input and add CRC32 sums into the Bloom filter
-                let stdin = io::stdin();
-                for line in stdin.lock().lines() {
-                    let input_line = line.unwrap();
-                    let crc32_sum = calculate_crc32(input_line.as_bytes());
+            // Handle the case where loading the Bloom filter fails
+            eprintln!("Error: Failed to load Bloom filter from file: {}", file_path);
+            std::process::exit(1);
+        }
+    }
 
-                    // Check if the CRC32 sum is already in the Bloom filter
-                    if !bloom_filter.contains(&(crc32_sum as usize % bits_size)) {
-                        bloom_filter.insert(crc32_sum as usize % bits_size);
-                        current_lines_inserted += 1;
-                    }
+    for line in stdin().lock().lines() {
+        let input_line = line.unwrap();
+        let crc32_sum = calculate_crc32(input_line.as_bytes());
 
-                    if let Some(limit_value) = limit {
-                        if current_lines_inserted >= limit_value {
-                            // If the limit is reached, print the number of lines inserted and exit
-                            println!("Lines inserted into Bloom filter: {}", current_lines_inserted);
-                            return;
-                        }
+        // Check if the CRC32 sum is already in the Bloom filter
+        if !bloom_filter.contains(crc32_sum as usize % bits_size) {
+            if write_mode {
+                bloom_filter.insert(crc32_sum as usize % bits_size);
+            }
+            current_lines_inserted += 1;
+        }
+
+        if let Some(limit_value) = limit {
+            if current_lines_inserted >= limit_value {
+                // If the limit is reached, print the number of lines inserted and exit
+                println!("Lines inserted into Bloom filter: {}", current_lines_inserted);
+                if write_mode {
+                    // @todo: Find first file which is not full and can be written.
+                    for (i, file_path) in file_paths.iter().enumerate() {
+                        save_bloom_filter(&bloom_filter, &file_path, current_lines_inserted).unwrap_or_else(|err| {
+                            eprintln!("Error: Failed to save Bloom filter to file: {}: {}", file_path, err);
+                            std::process::exit(1);
+                        });
                     }
                 }
-
-                // Save updated Bloom filter to file
-                if let Err(err) = save_bloom_filter(&bloom_filter, &file_path, current_lines_inserted) {
-                    eprintln!("Error: Failed to save Bloom filter to file: {}", file_path);
-                    std::process::exit(1);
-                }
-            } else {
-                eprintln!("Error: Failed to load Bloom filter from file: {}", file_path);
-                std::process::exit(1);
+                return;
             }
         }
     }
