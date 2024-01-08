@@ -1,0 +1,2 @@
+# Ignores Rust build files.
+target/
