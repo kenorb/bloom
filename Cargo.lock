@@ -23,6 +23,7 @@ version = "0.0.1"
 dependencies = [
  "bit-set",
  "crc32fast",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -39,3 +40,9 @@ checksum = "b540bd8bc810d3885c6ea91e2018302f68baba2129ab3e88f32389ee9370880d"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53be06678ed9e83edb1745eb72efc0bbcd7b5c3c35711a860906aed827a13d61"

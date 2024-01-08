@@ -6,3 +6,7 @@ authors = ["kenorb <kenorb@users.noreply.github.com>", "nseam"]
 [dependencies]
 bit-set = "0.5.2"
 crc32fast = "1.3.2"
+
+[dependencies.xxhash-rust]
+version = "0.8.5"
+features = ["xxh3", "const_xxh3"]

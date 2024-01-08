@@ -1,5 +1,6 @@
 extern crate bit_set;
 extern crate crc32fast;
+extern crate xxhash_rust;
 
 use bit_set::BitSet;
 use crc32fast::Hasher;
@@ -8,6 +9,17 @@ use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{stdin, stdout, BufRead, Write};
 use std::path::Path;
+use xxhash_rust::const_xxh3::xxh3_64 as const_xxh3;
+use xxhash_rust::xxh3::xxh3_64;
+
+const TEST: u64 = const_xxh3(b"TEST");
+
+fn test_input(text: &str) -> bool {
+    match xxh3_64(text.as_bytes()) {
+        TEST => true,
+        _ => false
+    }
+}
 
 fn calculate_crc32(data: &[u8]) -> u32 {
     let mut hasher = Hasher::new();
