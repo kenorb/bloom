@@ -1,8 +1,10 @@
-use std::collections::BitSet;
+extern crate bit_set;
+
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, Seek, SeekFrom, Write};
 use std::path::Path;
+use bit_set::BitSet;
 use crc32fast::Hasher;
 
 fn calculate_crc32(data: &[u8]) -> u32 {
