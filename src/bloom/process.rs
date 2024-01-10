@@ -1,22 +1,43 @@
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::BufRead;
+use std::io::{BufRead, stdin};
 use std::path::Path;
 use bit_set::BitSet;
 use crc32fast::Hasher;
 use xxhash_rust::xxh3::xxh3_64;
-use TEST;
+use ::{Params, TEST};
+use bloom;
+use bloom::readers_writers;
 
 /// Performs Bloom filter tasks.
-pub fn perform(file_paths: &[String], uses_file_index_expansion: bool, bits_sizes: &[usize], write_mode: bool, limit: usize) {
-    println!("Will perform actions.{}", if uses_file_index_expansion { " Will use file index expansion." } else { "" });
+pub fn process(params: &Params) {
+    debug_args(&params);
 
-    for (i, path) in file_paths.iter().enumerate() {
-        println!(" - Bloom filter: {path} with size {}", if bits_sizes.len() == 1 { bits_sizes[0] } else { bits_sizes[i] });
+    let mut readerswriters: Vec<readers_writers::ReaderWriter>;
+
+    for i in 0 .. params.file_paths.len() {
+        readerswriters.push(MemoryReaderWriter::new());
+    }
+
+    for line in stdin().lock().lines() {
+        process_line(line.unwrap());
+    }
+}
+
+/// Processes a single line.
+fn process_line(line: String) {
+    println!("Input line: {line}");
+}
+
+fn debug_args(params: &Params) {
+    println!("Will perform actions.{}", if params.uses_file_index_expansion { " Will use file index expansion." } else { "" });
+    for (i, path) in params.file_paths.iter().enumerate() {
+        println!(" - Bloom filter: {path} with size {}", if params.bits_sizes.len() == 1 { params.bits_sizes[0] } else { params.bits_sizes[i] });
     }
 
     println!("{}", xxh3_64("Hello".as_bytes()));
 }
+
 /*
 fn test_input(text: &str) -> bool {
     match xxh3_64(text.as_bytes()) {

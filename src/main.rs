@@ -1,9 +1,12 @@
-mod perform;
-
 extern crate bit_set;
 extern crate crc32fast;
 extern crate xxhash_rust;
 extern crate parse_size;
+
+mod bloom {
+    pub mod readers_writers;
+    pub mod process;
+}
 
 use bit_set::BitSet;
 use crc32fast::Hasher;
@@ -14,9 +17,16 @@ use std::path::Path;
 use xxhash_rust::const_xxh3::xxh3_64 as const_xxh3;
 use xxhash_rust::xxh3::xxh3_64;
 use parse_size::parse_size;
-use perform::perform;
 
 const TEST: u64 = const_xxh3(b"TEST");
+
+struct Params {
+    file_paths: Vec<String>,
+    uses_file_index_expansion: bool,
+    bits_sizes: Vec<usize>,
+    write_mode: bool,
+    limit: usize,
+}
 
 fn print_help() {
     println!("Bloom Filter Command Line Utility");
@@ -45,11 +55,13 @@ fn print_help() {
 }
 
 fn main() {
-    let mut file_paths = Vec::new();
-    let mut bits_sizes = Vec::new();
-    let mut write_mode = false;
-    let mut lines_inserted = 0;
-    let mut limit:usize = 0;
+    let mut params = Params {
+        file_paths: vec![],
+        uses_file_index_expansion: false,
+        bits_sizes: vec![],
+        write_mode: false,
+        limit: 0,
+    };
 
     // Parse command line arguments.
     for (idx, arg) in env::args().enumerate().skip(1) {
@@ -60,7 +72,7 @@ fn main() {
                     eprintln!("Error: No file path provided after -f or --file parameter.");
                     std::process::exit(1);
                 });
-                file_paths.push(file_path);
+                params.file_paths.push(file_path);
             }
 
             // Size of the Bloom filter file in bits.
@@ -77,7 +89,7 @@ fn main() {
                         std::process::exit(1);
                     });
 
-                bits_sizes.push(bits_size);
+                params.bits_sizes.push(bits_size);
             }
 
             // Size of the Bloom filter file in given unit.
@@ -100,15 +112,15 @@ fn main() {
                     std::process::exit(1);
                 }) as usize;
 
-                bits_sizes.push(bits_size);
+                params.bits_sizes.push(bits_size);
             }
 
             // Whether we want to update (write to) Bloom filter files.
-            "-w" | "--write" => write_mode = true,
+            "-w" | "--write" => params.write_mode = true,
 
             // Specifies maximum number of lines that could be added to each Bloom filer file.
             "-l" | "--limit" => {
-                limit = env::args()
+                params.limit = env::args()
                     .nth(idx + 1)
                     .unwrap_or_else(|| {
                         eprintln!(
@@ -130,12 +142,12 @@ fn main() {
         }
     }
 
-    if file_paths.is_empty() {
+    if params.file_paths.is_empty() {
         eprintln!("Error: No file paths provided.");
         std::process::exit(1);
     }
 
-    if bits_sizes.len() > 1 && bits_sizes.len() != file_paths.len() {
+    if params.bits_sizes.len() > 1 && params.bits_sizes.len() != params.file_paths.len() {
         eprintln!("Error: Number of bits sizes should be exactly one or match the number of file paths.");
         std::process::exit(1);
     }
@@ -144,21 +156,23 @@ fn main() {
     // Number of '#' characters in the file path (there could by only one file path with '#' character).
     let mut num_path_hashes: usize = 0;
 
-    for path in &file_paths {
+    for path in &params.file_paths {
         num_path_hashes = path.matches("#").count();
         if num_path_hashes > 1 {
             eprintln!("Error: There can be only one '#' file index expansion character in the file path.");
             std::process::exit(1);
         }
         else if num_path_hashes == 1 {
-            if file_paths.len() > 1 {
+            if params.file_paths.len() > 1 {
                 eprintln!("Error: There can be only one -f or --file path if '#' symbol was used in the file path.");
                 std::process::exit(1);
             }
         }
     }
 
-    perform(&file_paths, num_path_hashes == 1, &bits_sizes, write_mode, limit);
+    params.uses_file_index_expansion = num_path_hashes == 1;
+
+    process(&params);
 
     /*
 
