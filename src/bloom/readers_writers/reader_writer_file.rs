@@ -1,12 +1,13 @@
-use bloom::readers_writers::reader_writer::ReaderWriterTrait;
+use bloom::readers_writers::reader_writer::ReaderWriter;
 
 
 struct FileReaderWriter {
+    is_acquired: bool,
 }
 
-impl ReaderWriterTrait for FileReaderWriter {
+impl ReaderWriter for FileReaderWriter {
     fn new(path: String) -> Self {
-        FileReaderWriter {
+        Self {
             is_acquired: false
         }
     }

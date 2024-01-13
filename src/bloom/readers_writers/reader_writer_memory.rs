@@ -1,25 +1,33 @@
-use bloom::readers_writers::reader_writer::{ReaderWriter, ReaderWriterTrait};
+use std::io::Read;
+use bit_set::BitSet;
+use bloom::readers_writers::reader_writer::{ReaderWriter, ReaderWriter};
 
 struct MemoryReaderWriter {
+    is_acquired: bool,
+    bitset: BitSet<bool>,
 }
 
-impl MemoryReaderWriter {
-    fn new() -> Self {
-        MemoryReaderWriter() {
-
-        }
+impl ReaderWriter for MemoryReaderWriter {
+    fn acquire(&mut self) {
+        self.is_acquired = true;
+    }
+    fn release(&mut self) {
+        self.is_acquired = false;
     }
 
-    fn acquire() {
-    }
+    fn set(&mut self, index: usize) {
 
-    fn release() {
-    }
-
-    fn set(index: usize) {
     }
 
     fn get(index: usize) {
 
     }
+
+    fn new() -> Self {
+        MemoryReaderWriter {
+            is_acquired: false,
+            bitset: BitSet<bool>::new()
+        }
+    }
+
 }

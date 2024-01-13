@@ -1,32 +1,12 @@
-pub trait ReaderWriterTrait
+pub trait ReaderWriter
 {
     /// Acquires access to the content.
-    fn acquire();
+    fn acquire(&mut self);
 
     /// Releases access to the content.
-    fn release();
-    fn set(index: usize);
+    fn release(&mut self);
+
+    fn set(&mut self, index: usize);
     fn get(index: usize);
-}
-
-pub struct ReaderWriter {
-    pub is_acquired: bool
-}
-
-impl ReaderWriterTrait for ReaderWriter {
-    fn acquire() {
-        todo!()
-    }
-
-    fn release() {
-        todo!()
-    }
-
-    fn set(index: usize) {
-        todo!()
-    }
-
-    fn get(index: usize) {
-        todo!()
-    }
+    fn new() -> Self;
 }
