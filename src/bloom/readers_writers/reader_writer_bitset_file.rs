@@ -19,10 +19,16 @@ impl BitSetFile {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(file_path)?;
+            .open(file_path).unwrap_or_else(|err| {
+                eprintln!(
+                    "Error: Failed to read/write Bloom filter file: {}: {}", file_path, err
+                );
+                std::process::exit(1);
+            }
+        );
 
         // Initialize the file with zeroes
-        file.set_len(num_bytes)?;
+        file.set_len(num_bytes).expect("Cannot initialize bloom filter file size.");
 
         Self {
             file,
@@ -58,32 +64,34 @@ impl BitSetFile {
     pub fn write_bit(&mut self, bit_index: u64, value: bool) -> io::Result<()> {
         let byte_index = bit_index / 8;
 
-        if index >= self.num_bits {
+        if bit_index >= self.num_bits {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bit index out of bounds"));
         }
 
         // Read the corresponding byte from the file
         let mut buffer = [0u8];
-        self.file.seek(io::SeekFrom::Start(index as u64))?;
+        self.file.seek(io::SeekFrom::Start(bit_index as u64))?;
         self.file.read_exact(&mut buffer)?;
 
         // Update the bit in the buffer
         if value {
-            buffer[0] |= 1 << (index % 8);
+            buffer[0] |= 1 << (bit_index % 8);
         } else {
-            buffer[0] &= !(1 << (index % 8));
+            buffer[0] &= !(1 << (bit_index % 8));
         }
 
         // Write the updated byte back to the file
-        self.file.seek(io::SeekFrom::Start(index as u64))?;
+        self.file.seek(io::SeekFrom::Start(bit_index as u64))?;
         self.file.write_all(&buffer)?;
 
         // Update the BitSet
+        /*
         if value {
-            self.bitset.insert(index);
+            self.bitset.insert(bit_index);
         } else {
-            self.bitset.remove(index);
+            self.bitset.remove(bit_index);
         }
+        */
 
         Ok(())
     }

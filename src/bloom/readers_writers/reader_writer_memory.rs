@@ -1,10 +1,10 @@
-use std::io::Read;
-use bit_set::BitSet;
-use bloom::readers_writers::reader_writer::{ReaderWriter, ReaderWriter};
+use bloomfilter::Bloom;
+use bloom::readers_writers::reader_writer::{ReaderWriter};
 
-struct MemoryReaderWriter {
+pub(crate) struct MemoryReaderWriter {
     is_acquired: bool,
-    bitset: BitSet<bool>,
+    num_writes: usize,
+    filter: Bloom<String>,
 }
 
 impl ReaderWriter for MemoryReaderWriter {
@@ -15,19 +15,21 @@ impl ReaderWriter for MemoryReaderWriter {
         self.is_acquired = false;
     }
 
-    fn set(&mut self, index: usize) {
-
+    fn set(&mut self, value: &String) {
+        self.filter.set(value);
     }
 
-    fn get(index: usize) {
-
+    fn check(&self, value: &String) -> bool {
+        return self.filter.check(value);
     }
+}
 
-    fn new() -> Self {
-        MemoryReaderWriter {
+impl MemoryReaderWriter {
+    pub(crate) fn new(items_count: usize, fp_p: f64) -> Self {
+        Self {
             is_acquired: false,
-            bitset: BitSet<bool>::new()
+            num_writes: 0,
+            filter: Bloom::new_for_fp_rate(items_count, fp_p)
         }
     }
-
 }

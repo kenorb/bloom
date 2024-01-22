@@ -1,32 +1,35 @@
-use std::fs::{File, OpenOptions};
-use std::io;
 use std::io::{BufRead, stdin};
-use std::path::Path;
-use bit_set::BitSet;
-use crc32fast::Hasher;
 use xxhash_rust::xxh3::xxh3_64;
 use ::{Params, TEST};
 use bloom;
-use bloom::readers_writers;
+use bloom::readers_writers::reader_writer::{ReaderWriter};
+use bloom::readers_writers::reader_writer_memory::{MemoryReaderWriter};
 
 /// Performs Bloom filter tasks.
 pub fn process(params: &Params) {
     debug_args(&params);
 
-    let mut readerswriters: Vec<readers_writers::ReaderWriter>;
+    let mut readerswriters: Vec<Box<dyn ReaderWriter>> = Vec::new();
 
     for i in 0 .. params.file_paths.len() {
-        readerswriters.push(MemoryReaderWriter::new());
+        let rw: MemoryReaderWriter = MemoryReaderWriter::new(10000, 0.001);
+        readerswriters.push(Box::new(rw));
     }
 
     for line in stdin().lock().lines() {
-        process_line(line.unwrap());
+        process_line(line.unwrap(), &mut readerswriters);
     }
 }
 
 /// Processes a single line.
-fn process_line(line: String) {
+fn process_line(line: String, rws: &mut Vec<Box<dyn ReaderWriter>>) {
     println!("Input line: {line}");
+
+    for (idx, rw) in rws.iter().enumerate() {
+        println!("Checking reader-writer #{idx} for string \"{line}\": {}.", if rw.check(&line) { "String exists" } else { "String does not exist" });
+    }
+
+    rws[0].set(&line);
 }
 
 fn debug_args(params: &Params) {
@@ -34,8 +37,6 @@ fn debug_args(params: &Params) {
     for (i, path) in params.file_paths.iter().enumerate() {
         println!(" - Bloom filter: {path} with size {}", if params.bits_sizes.len() == 1 { params.bits_sizes[0] } else { params.bits_sizes[i] });
     }
-
-    println!("{}", xxh3_64("Hello".as_bytes()));
 }
 
 /*

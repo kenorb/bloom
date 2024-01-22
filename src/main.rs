@@ -2,6 +2,7 @@ extern crate bit_set;
 extern crate crc32fast;
 extern crate xxhash_rust;
 extern crate parse_size;
+extern crate bloomfilter;
 
 mod bloom {
     pub mod readers_writers;
@@ -17,6 +18,7 @@ use std::path::Path;
 use xxhash_rust::const_xxh3::xxh3_64 as const_xxh3;
 use xxhash_rust::xxh3::xxh3_64;
 use parse_size::parse_size;
+use bloom::process::process;
 
 const TEST: u64 = const_xxh3(b"TEST");
 
