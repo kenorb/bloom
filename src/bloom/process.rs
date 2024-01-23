@@ -1,42 +1,150 @@
 use std::io::{BufRead, stdin};
-use xxhash_rust::xxh3::xxh3_64;
+use memory_stats::memory_stats;
 use ::{Params, TEST};
 use bloom;
-use bloom::readers_writers::reader_writer::{ReaderWriter};
-use bloom::readers_writers::reader_writer_memory::{MemoryReaderWriter};
+use bloom::containers::container::{Container};
+use bloom::containers::container_memory::{MemoryContainer};
+
 
 /// Performs Bloom filter tasks.
-pub fn process(params: &Params) {
-    debug_args(&params);
+pub fn process(params: &mut Params) {
+    let mut initial_physical_mem: usize = 0;
+    let mut initial_virtual_mem: usize = 0;
 
-    let mut readerswriters: Vec<Box<dyn ReaderWriter>> = Vec::new();
-
-    for i in 0 .. params.file_paths.len() {
-        let rw: MemoryReaderWriter = MemoryReaderWriter::new(10000, 0.001);
-        readerswriters.push(Box::new(rw));
+    if let Some(usage) = memory_stats() {
+        initial_physical_mem = usage.physical_mem;
+        initial_virtual_mem = usage.virtual_mem;
     }
 
+    let mut containers: Vec<Box<dyn Container>> = Vec::new();
+
+    if params.file_paths.is_empty() {
+        // We will use a single memory container.
+        params.write_mode = true;
+        params.file_paths.push(String::from("<memory>"));
+    }
+
+    if params.debug {
+        debug_args(&params);
+    }
+
+    // Creating memory containers.
+    for (idx, path) in params.file_paths.iter().enumerate() {
+
+        let container;
+
+        if path == "<memory>" {
+            if params.error_rate > 0.0 {
+                container = MemoryContainer::new(params.limit, params.error_rate);
+            }
+            else if params.sizes[idx] > 0 {
+                container = MemoryContainer::new_bitmap_size(params.limit, params.sizes[idx]);
+            }
+            else {
+                eprintln!("Error: Container must specify either error rate via -e option or entry limit via -l option.");
+                std::process::exit(1);
+            }
+        }
+        else {
+            eprintln!("Error: Writing to file is not yet supported.");
+            std::process::exit(1);
+        }
+
+        containers.push(Box::new(container));
+    }
+
+    // Current container index (we always use last one, as previous ones are treated as full).
+    let mut curr_container_idx: usize = 0;
+
     for line in stdin().lock().lines() {
-        process_line(line.unwrap(), &mut readerswriters);
+        // Processing one line using current container index.
+        process_line(line.unwrap(), params, &mut containers, &mut curr_container_idx);
+    }
+
+    if params.debug {
+        println!();
+        println!("[ MEMORY USAGE ]");
+        if let Some(usage) = memory_stats() {
+            println!("Physical memory used: {:.2} MiB.", (usage.physical_mem - initial_physical_mem) as f64 / 1024.0 / 1024.0);
+            println!(" Virtual memory used: {:.2} MiB.", (usage.virtual_mem - initial_virtual_mem) as f64 / 1024.0 / 1024.0);
+        } else {
+            println!("Couldn't get the current memory usage :(");
+        }
     }
 }
 
 /// Processes a single line.
-fn process_line(line: String, rws: &mut Vec<Box<dyn ReaderWriter>>) {
-    println!("Input line: {line}");
+fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Container>>, curr_container_idx: &mut usize) {
+    for (idx, container) in containers.iter().enumerate() {
+        let exists = container.check(&line);
 
-    for (idx, rw) in rws.iter().enumerate() {
-        println!("Checking reader-writer #{idx} for string \"{line}\": {}.", if rw.check(&line) { "String exists" } else { "String does not exist" });
+        if params.debug {
+            println!("Input: \"{line}\". Checking container #{idx} - {}", if exists { "String exists" } else { "String does not exist" });
+        }
+
+        if (exists) {
+            // Potential match found. We're done.
+            return;
+        }
     }
 
-    rws[0].set(&line);
+    if *curr_container_idx >= containers.len() {
+        // No more containers to write to. Outputting the line.
+        if params.debug {
+            println!("> Unmatched (bloom size overflow): \"{}\".", line);
+        }
+        else {
+            println!("{}", line);
+        }
+        return;
+    }
+
+    // No match found in all containers.
+    if params.debug {
+        println!("> Unmatched: \"{}\".", line);
+    }
+    else {
+        println!("{}", line);
+    }
+
+    if !params.write_mode {
+        if params.debug {
+            println!("Not writing \"{line}\" into container #{} as -w was not passed.", *curr_container_idx);
+        }
+        return;
+    }
+
+    let mut last_container = &mut containers[*curr_container_idx];
+
+    if params.debug {
+        println!("Writing \"{line}\" into container #{}...", *curr_container_idx);
+    }
+
+    // Writing line into current bloom filter.
+    last_container.set(&line);
+
+    if last_container.is_full() {
+        // We will now use the next container.
+        if params.debug {
+            println!("Container #{} is now full.", *curr_container_idx);
+        }
+        *curr_container_idx += 1;
+    }
 }
 
 fn debug_args(params: &Params) {
-    println!("Will perform actions.{}", if params.uses_file_index_expansion { " Will use file index expansion." } else { "" });
+    println!("[ INPUT ARGUMENTS ]");
+    println!(" - debug:      {}", if params.debug { "True" } else { "False" });
+    println!(" - write:      {}", if params.write_mode { "True" } else { "False" });
+    println!(" - limit:      {}", params.limit);
+    println!(" - error_rate: {}", params.error_rate);
+
+    println!();
+    println!("[ CONTAINERS ]");
     for (i, path) in params.file_paths.iter().enumerate() {
-        println!(" - Bloom filter: {path} with size {}", if params.bits_sizes.len() == 1 { params.bits_sizes[0] } else { params.bits_sizes[i] });
+        println!(" - Container \"{path}\" with size {}", if params.sizes.len() == 1 { params.sizes[0] } else { params.sizes[i] });
     }
+    println!();
 }
 
 /*

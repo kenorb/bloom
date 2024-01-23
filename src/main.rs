@@ -3,31 +3,29 @@ extern crate crc32fast;
 extern crate xxhash_rust;
 extern crate parse_size;
 extern crate bloomfilter;
+extern crate memory_stats;
 
 mod bloom {
-    pub mod readers_writers;
+    pub mod containers;
     pub mod process;
 }
 
-use bit_set::BitSet;
-use crc32fast::Hasher;
 use std::{env, io};
-use std::fs::{File, OpenOptions};
 use std::io::{stdin, stdout, BufRead, BufReader, Write};
-use std::path::Path;
 use xxhash_rust::const_xxh3::xxh3_64 as const_xxh3;
-use xxhash_rust::xxh3::xxh3_64;
 use parse_size::parse_size;
 use bloom::process::process;
 
 const TEST: u64 = const_xxh3(b"TEST");
 
 struct Params {
+    debug: bool,
     file_paths: Vec<String>,
     uses_file_index_expansion: bool,
-    bits_sizes: Vec<usize>,
+    sizes: Vec<usize>,
     write_mode: bool,
     limit: usize,
+    error_rate: f64,
 }
 
 fn print_help() {
@@ -37,12 +35,13 @@ fn print_help() {
     println!("Options:");
     println!("  -f,  --file FILE       Specifies Bloom filter file. You may specify multiple files. You can also specify a single file");
     println!("                         with '#' character that will be automatically expanded to file index.");
-    println!("  -fl, --filelimit NUM   Limits the number of files to be used when path contains '#' file index expansion character.");
-    println!("                         Only applied when writing. For reading all files are used.");
-    println!("  -b,  --bits NUM        Specifies Bloom filter size in bits (note that 1 byte is 8 bits).");
+    //println!("  -fl, --file-limit NUM   Limits the number of files to be used when path contains '#' file index expansion character.");
+    //println!("                          Only applied when writing. For reading all files are used.");
     println!("  -s,  --size NUM[UNIT]  Specifies Bloom filter size in bytes or given unit.");
+    println!("  -e,  --error-rate NUM  Specifies number of wanted rate of false positives.");
     println!("  -w,  --write           Creates an empty Bloom filter file or update an existing one.");
     println!("  -l,  --lines NUM       Limits the number of lines to write into the Bloom filter for each file.");
+    println!("  -d,  --debug           Will output debug information.");
     println!("  -h,  --help            Prints help and usage information.");
     println!();
     println!("Examples:");
@@ -58,9 +57,11 @@ fn print_help() {
 
 fn main() {
     let mut params = Params {
+        debug: false,
         file_paths: vec![],
+        error_rate: 0.0,
         uses_file_index_expansion: false,
-        bits_sizes: vec![],
+        sizes: vec![],
         write_mode: false,
         limit: 0,
     };
@@ -91,7 +92,7 @@ fn main() {
                         std::process::exit(1);
                     });
 
-                params.bits_sizes.push(bits_size);
+                params.sizes.push(bits_size);
             }
 
             // Size of the Bloom filter file in given unit.
@@ -114,7 +115,24 @@ fn main() {
                     std::process::exit(1);
                 }) as usize;
 
-                params.bits_sizes.push(bits_size);
+                params.sizes.push(bits_size);
+            }
+
+            // Specifies expected rate of false positives.
+            "-e" | "--error-rate" => {
+                params.error_rate = env::args()
+                    .nth(idx + 1)
+                    .unwrap_or_else(|| {
+                        eprintln!(
+                            "Error: No error rate value provided after -e or --error-rate parameter."
+                        );
+                        std::process::exit(1);
+                    })
+                    .parse()
+                    .unwrap_or_else(|_| {
+                        eprintln!("Error: Error rate must be a positive number.");
+                        std::process::exit(1);
+                    });
             }
 
             // Whether we want to update (write to) Bloom filter files.
@@ -136,6 +154,9 @@ fn main() {
                         std::process::exit(1);
                     });
             }
+
+            // Will output debug information.
+            "-d" | "--debug" => params.debug = true,
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -144,12 +165,14 @@ fn main() {
         }
     }
 
+    /*
     if params.file_paths.is_empty() {
         eprintln!("Error: No file paths provided.");
         std::process::exit(1);
     }
+    */
 
-    if params.bits_sizes.len() > 1 && params.bits_sizes.len() != params.file_paths.len() {
+    if params.sizes.len() > 1 && params.sizes.len() != params.file_paths.len() {
         eprintln!("Error: Number of bits sizes should be exactly one or match the number of file paths.");
         std::process::exit(1);
     }
@@ -174,7 +197,7 @@ fn main() {
 
     params.uses_file_index_expansion = num_path_hashes == 1;
 
-    process(&params);
+    process(&mut params);
 
     /*
 

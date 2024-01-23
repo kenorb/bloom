@@ -1,11 +1,12 @@
-use bloom::readers_writers::reader_writer::ReaderWriter;
+use bloom::containers::container::Container;
 
-struct FileReaderWriter {
+struct FileContainer {
     is_acquired: bool,
     num_writes: usize,
+    max_writes: usize,
 }
 
-impl ReaderWriter for FileReaderWriter {
+impl Container for FileContainer {
     fn acquire(&mut self) {
     }
 
@@ -13,18 +14,24 @@ impl ReaderWriter for FileReaderWriter {
     }
 
     fn set(&mut self, value: &String) {
+        self.num_writes += 1;
     }
 
     fn check(&self, value: &String) -> bool {
         return false;
     }
+
+    fn is_full(&self) -> bool {
+        return self.num_writes >= self.max_writes;
+    }
 }
 
-impl FileReaderWriter {
+impl FileContainer {
     fn new(items_count: usize, fp_p: f64) -> Self {
         Self {
             is_acquired: false,
             num_writes: 0,
+            max_writes: items_count
         }
     }
 }
