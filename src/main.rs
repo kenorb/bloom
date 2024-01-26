@@ -1,157 +1,200 @@
 extern crate bit_set;
 extern crate crc32fast;
 extern crate xxhash_rust;
+extern crate parse_size;
+extern crate bloomfilter;
+extern crate memory_stats;
 
-use bit_set::BitSet;
-use crc32fast::Hasher;
-use io::BufReader;
-use std::env;
-use std::fs::{File, OpenOptions};
-use std::io::{stdin, stdout, BufRead, Write};
-use std::path::Path;
+mod bloom {
+    pub mod containers;
+    pub mod process;
+}
+
+use std::{env};
+use std::io::{BufRead, Write};
 use xxhash_rust::const_xxh3::xxh3_64 as const_xxh3;
-use xxhash_rust::xxh3::xxh3_64;
+use parse_size::parse_size;
+use bloom::process::process;
 
 const TEST: u64 = const_xxh3(b"TEST");
 
-fn test_input(text: &str) -> bool {
-    match xxh3_64(text.as_bytes()) {
-        TEST => true,
-        _ => false
-    }
+#[derive(Copy, Clone)]
+enum DataSource {
+    Memory,
+    File
 }
 
-fn calculate_crc32(data: &[u8]) -> u32 {
-    let mut hasher = Hasher::new();
-    hasher.update(data);
-    hasher.finalize()
+#[derive(Copy, Clone)]
+enum ConstructionType {
+    // -ls NUM,NUM[UNIT]
+    LinesAndSize,
+    // -le NUM,NUM
+    LinesAndErrorRate,
 }
 
-fn generate_bloom_filter(lines: Vec<&str>, bits_size: usize) -> BitSet {
-    let mut bloom_filter = BitSet::with_capacity(bits_size);
 
-    for line in lines {
-        let crc32_sum = calculate_crc32(line.as_bytes());
-        bloom_filter.insert(crc32_sum as usize % bits_size);
-    }
-
-    bloom_filter
+#[derive(Copy, Clone)]
+struct ConstructionDetails {
+    construction_type: ConstructionType,
+    limit: usize,
+    error_rate: f64,
+    size: usize,
 }
 
-fn save_bloom_filter(
-    bloom_filter: &BitSet,
-    file_path: &str,
-    lines_inserted: usize,
-) -> Result<(), std::io::Error> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(file_path)?;
-
-    // Insert lines_inserted value at the beginning of the file
-    writeln!(file, "{}", lines_inserted)?;
-
-    // Write Bloom filter data to the file
-    for idx in bloom_filter.iter() {
-        writeln!(file, "{}", idx)?;
-    }
-
-    Ok(())
+struct ContainerDetails {
+    path: String,
+    data_source: DataSource,
+    construction_details: ConstructionDetails
 }
 
-fn write_mode_bloom_filter_file(file_path: &str, bits_size: usize) -> Result<(), std::io::Error> {
-    let bloom_filter = BitSet::with_capacity(bits_size);
-    save_bloom_filter(&bloom_filter, file_path, 0)?;
-    Ok(())
-}
-
-fn load_bloom_filter(file_path: &str) -> Result<(BitSet, usize), io::Error> {
-    let mut bloom_filter = BitSet::new();
-    let mut lines_inserted = 0;
-
-    if Path::new(file_path).exists() {
-        let file = File::open(file_path)?;
-
-        // Read the first line as lines_inserted
-        let mut lines = io::BufReader::new(file).lines();
-        if let Some(Ok(value)) = lines.next() {
-            lines_inserted = value
-                .parse()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        }
-
-        // Read the remaining lines as Bloom filter data
-        for line in lines {
-            let idx: usize = line?.parse()?;
-            bloom_filter.insert(idx);
-        }
-    }
-
-    Ok((bloom_filter, lines_inserted))
+struct Params {
+    debug: bool,
+    containers_details: Vec<ContainerDetails>,
+    write_mode: bool,
 }
 
 fn print_help() {
     println!("Bloom Filter Command Line Utility");
-    println!("Usage: bloom_filter [OPTIONS]");
     println!();
-    println!("Options:");
-    println!("  -f, --file FILE   Specify Bloom filter file");
-    println!("  -b, --bits BITS   Specify bits size for the Bloom filter (default: 1,000,000)");
-    println!("  -w, --write       Create an empty Bloom filter file or update an existing one");
-    println!("  -l, --limit LIMIT Limit the number of lines to insert into the Bloom filter");
-    println!("  -h, --help        Print help and usage information");
+    println!("USAGE:");
+    println!("  bloom_filter [OPTIONS]");
+    println!();
+    println!("OPTIONS:");
+    println!();
+    println!("  -f,   --file FILE                     Specifies Bloom filter file. You may specify multiple files.");
+    println!();
+    println!("  -w,   --write                         Creates an empty Bloom filter file or updates an existing one.");
+    println!();
+    println!("  -ls,  --lines-and-size NUM,NUM[UNIT]  First number limits the number of lines to write into the Bloom filter for each");
+    println!("                                        file. Second number specifies Bloom filter size in bytes or given unit. Use -ls");
+    println!("                                        once to specify settings for all files or use it multiple times for each file.");
+    println!("                                        Mutually exclusive with -le option.");
+    println!();
+    println!("  -le, --lines-and-error-rate NUM,NUM   First number limits the number of lines to write into the Bloom filter for each");
+    println!("                                        file. Second number specifies wanted error rate for the given file (> 0 and < 1).");
+    println!("                                        Use -le once to specify settings for all files or use it multiple times for each");
+    println!("                                        file. Mutually exclusive with -ls option.");
+    println!();
+    println!("  -l,  --lines NUM                      Limits the number of lines to write into the Bloom filter for each file.");
+    println!();
+    println!("  -d,  --debug                          Will output debug information.");
+    println!();
+    println!("  -h,  --help                           Prints help and usage information.");
+    println!();
+    println!("EXAMPLES:");
+    println!();
+    println!("  - Will use and write two bloom filter files with maximum of 10 lines and 0.01 error rate each file. All other lines");
+    println!("    will not be stored in the files:");
+    println!("  $ bloom_filter  -w  -f file1.blf  -f file2.blf  -le 10,0.01  < input.txt");
+    println!();
+    println!("  - Will use memory and  maximum of 10 lines of input for the filter having 100MiB in size.");
+    println!("  $ bloom_filter  -ls 10,100MiB  < input.txt");
 }
 
 fn main() {
-    let mut file_paths = Vec::new();
-    let mut bits_sizes = Vec::new();
-    let mut write_mode = false;
-    let mut lines_inserted = 0;
-    let mut limit = None;
+    let mut params = Params {
+        debug: false,
+        containers_details: vec![],
+        write_mode: false,
+    };
 
-    // Parse command line arguments
+    // List of passed file paths.
+    let mut file_paths: Vec<String> = vec![];
+
+    // List of passed construction details (pairs of limit and error rate or size).
+    let mut constructions_details: Vec<ConstructionDetails> = vec![];
+
+    // Parses file arguments from command line. File construction options will be parsed later and file structs will be
+    // filled accordingly.
     for (idx, arg) in env::args().enumerate().skip(1) {
         match arg.as_str() {
+            // File output path. Could be passed multiple times.
             "-f" | "--file" => {
                 let file_path = env::args().nth(idx + 1).unwrap_or_else(|| {
                     eprintln!("Error: No file path provided after -f or --file parameter.");
                     std::process::exit(1);
                 });
+
                 file_paths.push(file_path);
+            },
+
+            // Specified limit and size of the Bloom filter file in given unit.
+            "-ls" | "--limit-and-size" => {
+                let value = env::args().nth(idx + 1).unwrap_or_else(|| {
+                    eprintln!("Error: No value provided after -ls or --limit-and-size parameter.");
+                    std::process::exit(1);
+                });
+
+                let pair: Vec<&str> = value.split(",").collect();
+
+                if (pair.len() != 2) {
+                    eprintln!("Error: -ls or --limit-and-size expects two parameters.");
+                    std::process::exit(1);
+                }
+
+                let limit = pair[0].parse().unwrap_or_else(|e| {
+                    eprintln!("Error: No value provided for limit after -ls or --limit-and-size parameter.");
+                    std::process::exit(1);
+                });
+
+                let mut size:usize = 0;
+                size = parse_size(pair[1]).unwrap_or_else(|_| {
+                    eprintln!("Error: Could not parse filter size passed in -ls or --limit-and-size parameter.");
+                    std::process::exit(1);
+                }) as usize;
+
+                constructions_details.push(ConstructionDetails {
+                    construction_type: ConstructionType::LinesAndSize,
+                    limit,
+                    size,
+                    error_rate: 0.0
+                });
             }
-            "-b" | "--bits" => {
-                let bits_size = env::args()
-                    .nth(idx + 1)
-                    .unwrap_or_else(|| {
-                        eprintln!("Error: No bits size provided after -b or --bits parameter.");
-                        std::process::exit(1);
-                    })
+
+            // Specifies limit and expected rates of false positives.
+            "-le" | "--limit-and-error-rate" => {
+                let value = env::args().nth(idx + 1).unwrap_or_else(|| {
+                    eprintln!("Error: No value provided after -le or --limit-and-error-rate parameter.");
+                    std::process::exit(1);
+                });
+
+                let pair : Vec<&str> = value.split(",").collect();
+
+                if (pair.len() != 2) {
+                    eprintln!("Error: -le or --limit-and-error-rate expects two parameters.");
+                    std::process::exit(1);
+                }
+
+                let limit = pair[0].parse().unwrap_or_else(|e| {
+                    eprintln!("Error: No value provided for limit after -le or --limit-and-error-rate parameter.");
+                    std::process::exit(1);
+                });
+
+                let mut error_rate: f64 = pair[1]
                     .parse()
                     .unwrap_or_else(|_| {
-                        eprintln!("Error: Bits size must be a positive integer.");
+                        eprintln!("Error: Error rate must be number.");
                         std::process::exit(1);
                     });
-                bits_sizes.push(bits_size);
+
+                if error_rate <= 0.0 || error_rate >= 1.0 {
+                    eprintln!("Error: Error rate must be a number greater than 0.0 and less than 1.0. \"{}\" passed.", error_rate);
+                    std::process::exit(1);
+                }
+
+                constructions_details.push(ConstructionDetails {
+                    construction_type: ConstructionType::LinesAndErrorRate,
+                    limit,
+                    error_rate,
+                    size: 0
+                });
             }
-            "-w" | "--write" => write_mode = true,
-            "-l" | "--limit" => {
-                limit = Some(
-                    env::args()
-                        .nth(idx + 1)
-                        .unwrap_or_else(|| {
-                            eprintln!(
-                                "Error: No limit value provided after -l or --limit parameter."
-                            );
-                            std::process::exit(1);
-                        })
-                        .parse()
-                        .unwrap_or_else(|_| {
-                            eprintln!("Error: Limit must be a positive integer.");
-                            std::process::exit(1);
-                        }),
-                );
-            }
+
+            // Whether we want to update (write to) Bloom filter files.
+            "-w" | "--write" => params.write_mode = true,
+
+            // Will output debug information.
+            "-d" | "--debug" => params.debug = true,
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -160,80 +203,36 @@ fn main() {
         }
     }
 
-    if file_paths.is_empty() {
-        eprintln!("Error: No file paths provided.");
+    // Checking arguments.
+
+    if file_paths.is_empty() && !params.write_mode {
+        // When no paths was given then we're assuming that we work on the memory, so need to enable writing.
+        params.write_mode = true;
+    }
+
+    if !file_paths.is_empty() {
+        eprintln!("Error: Writing to/reading from files is not yet supported.");
         std::process::exit(1);
     }
 
-    if bits_sizes.len() > 1 && bits_sizes.len() != file_paths.len() {
-        eprintln!("Error: Number of bits sizes should match the number of file paths.");
-        std::process::exit(1);
-    }
-
-    if write_mode {
-        for (i, file_path) in file_paths.iter().enumerate() {
-            let bits_size = if bits_sizes.is_empty() {
-                1_000_000 // Default bits size
-            } else {
-                bits_sizes[i]
-            };
-
-            // Create an empty Bloom filter file or update an existing one
-            if let Err(err) = write_mode_bloom_filter_file(&file_path, bits_size) {
-                eprintln!("Error: {}", err);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        if let Ok((mut bloom_filter, mut current_lines_inserted)) = load_bloom_filter(&file_path) {
-            // ...
-        } else {
-            // Handle the case where loading the Bloom filter fails
-            eprintln!(
-                "Error: Failed to load Bloom filter from file: {}",
-                file_path
-            );
+    if params.write_mode {
+        if file_paths.len() > 1 && file_paths.len() != constructions_details.len() {
+            eprintln!("Error: Number of passed -le or -ls parameters should be exactly one or match the number of file paths.");
             std::process::exit(1);
         }
     }
 
-    for line in stdin().lock().lines() {
-        let input_line = line.unwrap();
-        let crc32_sum = calculate_crc32(input_line.as_bytes());
+    // Building up list of ContainerDetails structures.
 
-        // Check if the CRC32 sum is already in the Bloom filter
-        if !bloom_filter.contains(crc32_sum as usize % bits_size) {
-            if write_mode {
-                bloom_filter.insert(crc32_sum as usize % bits_size);
-            }
-            current_lines_inserted += 1;
-        }
+    let num_containers = constructions_details.len();
 
-        if let Some(limit_value) = limit {
-            if current_lines_inserted >= limit_value {
-                // If the limit is reached, print the number of lines inserted and exit
-                println!(
-                    "Lines inserted into Bloom filter: {}",
-                    current_lines_inserted
-                );
-                if write_mode {
-                    // @todo: Find first file which is not full and can be written.
-                    for (i, file_path) in file_paths.iter().enumerate() {
-                        save_bloom_filter(&bloom_filter, &file_path, current_lines_inserted)
-                            .unwrap_or_else(|err| {
-                                eprintln!(
-                                    "Error: Failed to save Bloom filter to file: {}: {}",
-                                    file_path, err
-                                );
-                                std::process::exit(1);
-                            });
-                    }
-                }
-                return;
-            }
-        }
+    for idx in 0 .. num_containers {
+        params.containers_details.push(ContainerDetails {
+            path: format!("<memory #{idx}>"),
+            construction_details: constructions_details[idx],
+            data_source: DataSource::Memory,
+        });
     }
 
-    // Print the number of lines inserted into the Bloom filter
-    println!("Lines inserted into Bloom filter: {}", lines_inserted);
+    process(&mut params);
 }
