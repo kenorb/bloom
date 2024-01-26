@@ -1,9 +1,11 @@
+use std::cmp::min;
 use std::io::{BufRead, stdin};
 use memory_stats::memory_stats;
 use ::{Params, TEST};
-use bloom;
+use ::{bloom, DataSource};
 use bloom::containers::container::{Container};
 use bloom::containers::container_memory::{MemoryContainer};
+use ConstructionType;
 
 
 /// Performs Bloom filter tasks.
@@ -18,35 +20,28 @@ pub fn process(params: &mut Params) {
 
     let mut containers: Vec<Box<dyn Container>> = Vec::new();
 
-    if params.file_paths.is_empty() {
-        // We will use a single memory container.
-        params.write_mode = true;
-        params.file_paths.push(String::from("<memory>"));
-    }
-
     if params.debug {
         debug_args(&params);
     }
 
     // Creating memory containers.
-    for (idx, path) in params.file_paths.iter().enumerate() {
-
+    for (idx, file) in params.containers_details.iter().enumerate() {
         let container;
 
-        if path == "<memory>" {
-            if params.error_rate > 0.0 {
-                container = MemoryContainer::new(params.limit, params.error_rate);
+        if matches!(file.data_source, DataSource::Memory {..}) {
+            if matches!(file.construction_details.construction_type, ConstructionType::LinesAndErrorRate {..}) {
+                container = MemoryContainer::new(file.construction_details.limit, file.construction_details.error_rate);
             }
-            else if params.sizes[idx] > 0 {
-                container = MemoryContainer::new_bitmap_size(params.limit, params.sizes[idx]);
+            else if matches!(file.construction_details.construction_type, ConstructionType::LinesAndSize {..}) {
+                container = MemoryContainer::new_bitmap_size(file.construction_details.limit, file.construction_details.size);
             }
             else {
-                eprintln!("Error: Container must specify either error rate via -e option or entry limit via -l option.");
+                eprintln!("Internal Error: Construction type not implemented.");
                 std::process::exit(1);
             }
         }
         else {
-            eprintln!("Error: Writing to file is not yet supported.");
+            eprintln!("Error: Writing to memory is the only yet supported way.");
             std::process::exit(1);
         }
 
@@ -136,13 +131,27 @@ fn debug_args(params: &Params) {
     println!("[ INPUT ARGUMENTS ]");
     println!(" - debug:      {}", if params.debug { "True" } else { "False" });
     println!(" - write:      {}", if params.write_mode { "True" } else { "False" });
-    println!(" - limit:      {}", params.limit);
-    println!(" - error_rate: {}", params.error_rate);
 
     println!();
     println!("[ CONTAINERS ]");
-    for (i, path) in params.file_paths.iter().enumerate() {
-        println!(" - Container \"{path}\" with size {}", if params.sizes.len() == 1 { params.sizes[0] } else { params.sizes[i] });
+    for (i, file) in params.containers_details.iter().enumerate() {
+        let kind_str = match file.data_source {
+            DataSource::Memory => { "memory" }
+            DataSource::File => { "file" }
+        };
+
+        let type_str = match file.construction_details.construction_type {
+            ConstructionType::LinesAndSize => { "limit and size" }
+            ConstructionType::LinesAndErrorRate => { "limit and error-rate" }
+        };
+
+        println!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}",
+                 file.path,
+                 type_str,
+                 file.construction_details.size,
+                 file.construction_details.error_rate,
+                 file.construction_details.limit
+        );
     }
     println!();
 }

@@ -24,6 +24,7 @@ dependencies = [
  "bit-set",
  "bloomfilter",
  "crc32fast",
+ "log",
  "memory-stats",
  "parse-size",
  "xxhash-rust",
