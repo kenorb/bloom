@@ -47,7 +47,7 @@ struct ContainerDetails {
     construction_details: ConstructionDetails
 }
 
-struct Params {
+pub struct Params {
     debug: bool,
     containers_details: Vec<ContainerDetails>,
     write_mode: bool,
