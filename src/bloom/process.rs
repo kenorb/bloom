@@ -1,8 +1,8 @@
-use std::cmp::min;
+
 use std::io::{BufRead, stdin};
 use memory_stats::memory_stats;
-use ::{Params, TEST};
-use ::{bloom, DataSource};
+use ::{Params};
+use ::{DataSource};
 use bloom::containers::container::{Container};
 use bloom::containers::container_memory::{MemoryContainer};
 use ConstructionType;
@@ -25,7 +25,7 @@ pub fn process(params: &mut Params) {
     }
 
     // Creating memory containers.
-    for (idx, file) in params.containers_details.iter().enumerate() {
+    for (_idx, file) in params.containers_details.iter().enumerate() {
         let container;
 
         if matches!(file.data_source, DataSource::Memory {..}) {
@@ -77,7 +77,7 @@ fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Cont
             println!("Input: \"{line}\". Checking container #{idx} - {}", if exists { "String exists" } else { "String does not exist" });
         }
 
-        if (exists) {
+        if exists {
             // Potential match found. We're done.
             return;
         }
@@ -109,7 +109,7 @@ fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Cont
         return;
     }
 
-    let mut last_container = &mut containers[*curr_container_idx];
+    let last_container = &mut containers[*curr_container_idx];
 
     if params.debug {
         println!("Writing \"{line}\" into container #{}...", *curr_container_idx);
@@ -134,7 +134,7 @@ fn debug_args(params: &Params) {
 
     println!();
     println!("[ CONTAINERS ]");
-    for (i, file) in params.containers_details.iter().enumerate() {
+    for (_i, file) in params.containers_details.iter().enumerate() {
         let kind_str = match file.data_source {
             DataSource::Memory => { "memory" }
             DataSource::File => { "file" }

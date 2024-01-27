@@ -11,7 +11,7 @@ mod bloom {
 }
 
 use std::{env};
-use std::io::{BufRead, Write};
+use std::io::{BufRead};
 use xxhash_rust::const_xxh3::xxh3_64 as const_xxh3;
 use parse_size::parse_size;
 use bloom::process::process;
@@ -127,12 +127,12 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -ls or --limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
 
-                let limit = pair[0].parse().unwrap_or_else(|e| {
+                let limit = pair[0].parse().unwrap_or_else(|_e| {
                     eprintln!("Error: No value provided for limit after -ls or --limit-and-size parameter.");
                     std::process::exit(1);
                 });
@@ -160,17 +160,17 @@ fn main() {
 
                 let pair : Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -le or --limit-and-error-rate expects two parameters.");
                     std::process::exit(1);
                 }
 
-                let limit = pair[0].parse().unwrap_or_else(|e| {
+                let limit = pair[0].parse().unwrap_or_else(|_e| {
                     eprintln!("Error: No value provided for limit after -le or --limit-and-error-rate parameter.");
                     std::process::exit(1);
                 });
 
-                let mut error_rate: f64 = pair[1]
+                let error_rate: f64 = pair[1]
                     .parse()
                     .unwrap_or_else(|_| {
                         eprintln!("Error: Error rate must be number.");
