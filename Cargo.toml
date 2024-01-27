@@ -1,7 +1,10 @@
 [package]
 name = "bloom"
-version = "0.0.1"
 authors = ["kenorb <kenorb@users.noreply.github.com>", "nseam"]
+description = """
+Bloom is a command to filter out duplicated lines using bloom filter method.
+"""
+version = "0.0.1"
 
 [dependencies]
 bit-set = "0.5.2"
