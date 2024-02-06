@@ -80,7 +80,7 @@ fn process_line(line: &String, params: &mut Params, curr_container_idx: &mut usi
             println!("Input: \"{line}\". Checking container #{idx} - {}", if exists { "String exists" } else { "String does not exist" });
         }
 
-        if (exists) {
+        if exists {
             // Potential match found. We're done.
             return;
         }
@@ -147,7 +147,7 @@ fn debug_args(params: &Params) {
 
     println!();
     println!("[ CONTAINERS ]");
-    for (i, file) in params.containers_details.iter().enumerate() {
+    for (_i, file) in params.containers_details.iter().enumerate() {
         let kind_str = match file.data_source {
             DataSource::Memory => { "memory" }
             DataSource::File => { "file" }

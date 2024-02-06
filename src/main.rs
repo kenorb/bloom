@@ -48,7 +48,7 @@ struct ContainerDetails {
     construction_details: ConstructionDetails
 }
 
-struct Params {
+pub struct Params {
     debug: bool,
     containers_details: Vec<ContainerDetails>,
     write_mode: bool,
@@ -186,13 +186,12 @@ fn main() {
                     std::process::exit(1);
                 }
 
-                let limit = pair[0].parse().unwrap_or_else(|e| {
-                    eprintln!("Error: No value provided for limit after -bls or --bloom-limit-and-size parameter.");
+                let limit = parse_size(pair[0]).unwrap_or_else(|_| {
+                    eprintln!("Error: Could not parse limit passed in -xls or --xxh-limit-and-size parameter.");
                     std::process::exit(1);
-                });
+                }) as usize;
 
-                let mut size:usize = 0;
-                size = parse_size(pair[1]).unwrap_or_else(|_| {
+                let size = parse_size(pair[1]).unwrap_or_else(|_| {
                     eprintln!("Error: Could not parse filter size passed in -bls or --bloom-limit-and-size parameter.");
                     std::process::exit(1);
                 }) as usize;
@@ -221,12 +220,12 @@ fn main() {
                     std::process::exit(1);
                 }
 
-                let limit = pair[0].parse().unwrap_or_else(|e| {
-                    eprintln!("Error: No value provided for limit after -ble or --bloom-limit-and-error-rate parameter.");
+                let limit = parse_size(pair[0]).unwrap_or_else(|_| {
+                    eprintln!("Error: Could not parse limit passed in -xls or --xxh-limit-and-size parameter.");
                     std::process::exit(1);
-                });
+                }) as usize;
 
-                let mut error_rate: f64 = pair[1]
+                let error_rate: f64 = pair[1]
                     .parse()
                     .unwrap_or_else(|_| {
                         eprintln!("Error: Error rate must be number.");

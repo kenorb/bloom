@@ -13,11 +13,11 @@ impl Container for FileContainer {
     fn release(&mut self) {
     }
 
-    fn set(&mut self, value: &String) {
+    fn set(&mut self, _value: &String) {
         self.num_writes += 1;
     }
 
-    fn check(&self, value: &String) -> bool {
+    fn check(&self, _value: &String) -> bool {
         return false;
     }
 
@@ -27,7 +27,7 @@ impl Container for FileContainer {
 }
 
 impl FileContainer {
-    fn new(items_count: usize, fp_p: f64) -> Self {
+    fn new(items_count: usize, _fp_p: f64) -> Self {
         Self {
             is_acquired: false,
             num_writes: 0,

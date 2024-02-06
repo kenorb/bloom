@@ -1,7 +1,11 @@
 [package]
 name = "bloom"
-version = "0.0.1"
 authors = ["kenorb <kenorb@users.noreply.github.com>", "nseam"]
+description = """
+Bloom is a command to filter out duplicated lines using bloom filter method.
+"""
+license = "Unlicense OR MIT"
+version = "0.0.1"
 
 [dependencies]
 bit-set = "0.5.2"
@@ -15,3 +19,15 @@ bit-vec = "0.6.3"
 [dependencies.xxhash-rust]
 version = "0.8.8"
 features = ["xxh3", "xxh32", "xxh64"]
+
+[profile.optimized]
+codegen-units = 1
+debug = false
+debug-assertions = false
+incremental = false
+inherits = "release"
+lto = "fat"
+opt-level = 3
+overflow-checks = false
+panic = "abort"
+strip = "symbols"

@@ -1,4 +1,4 @@
-use bit_set::BitSet;
+
 use std::fs::OpenOptions;
 use std::io::{self, Read, Seek, Write};
 
@@ -14,7 +14,7 @@ impl BitSetFile {
     /// *  `num_bits` -
     pub fn new(file_path: &str, num_bits: u64) -> Self {
         let num_bytes: u64 = (num_bits + 7) / 8;
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -62,7 +62,7 @@ impl BitSetFile {
     /// # Returns
     /// Empty result.
     pub fn write_bit(&mut self, bit_index: u64, value: bool) -> io::Result<()> {
-        let byte_index = bit_index / 8;
+        let _byte_index = bit_index / 8;
 
         if bit_index >= self.num_bits {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bit index out of bounds"));
