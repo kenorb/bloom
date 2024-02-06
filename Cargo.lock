@@ -22,6 +22,7 @@ name = "bloom"
 version = "0.0.1"
 dependencies = [
  "bit-set",
+ "bit-vec",
  "bloomfilter",
  "crc32fast",
  "log",
