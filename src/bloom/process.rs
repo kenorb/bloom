@@ -1,10 +1,11 @@
-use std::cmp::min;
-use std::io::{BufRead, stdin};
+use std::io;
+use std::io::{BufRead, BufWriter, stdin, stdout, StdoutLock, Write};
 use memory_stats::memory_stats;
-use ::{Params, TEST};
+use ::{Params};
 use ::{bloom, DataSource};
 use bloom::containers::container::{Container};
-use bloom::containers::container_memory::{MemoryContainer};
+use bloom::containers::container_memory_bloom::{MemoryContainerBloom};
+use bloom::containers::container_memory_xxh::{MemoryContainerXXH};
 use ConstructionType;
 
 
@@ -18,42 +19,44 @@ pub fn process(params: &mut Params) {
         initial_virtual_mem = usage.virtual_mem;
     }
 
-    let mut containers: Vec<Box<dyn Container>> = Vec::new();
-
     if params.debug {
         debug_args(&params);
     }
 
     // Creating memory containers.
     for (idx, file) in params.containers_details.iter().enumerate() {
-        let container;
+        let container: Box<Container>;
 
         if matches!(file.data_source, DataSource::Memory {..}) {
-            if matches!(file.construction_details.construction_type, ConstructionType::LinesAndErrorRate {..}) {
-                container = MemoryContainer::new(file.construction_details.limit, file.construction_details.error_rate);
-            }
-            else if matches!(file.construction_details.construction_type, ConstructionType::LinesAndSize {..}) {
-                container = MemoryContainer::new_bitmap_size(file.construction_details.limit, file.construction_details.size);
-            }
-            else {
+            if matches!(file.construction_details.construction_type, ConstructionType::BloomLinesAndErrorRate {..}) {
+                container = Box::new(MemoryContainerBloom::new(file.construction_details.limit, file.construction_details.error_rate));
+            } else if matches!(file.construction_details.construction_type, ConstructionType::BloomLinesAndSize {..}) {
+                container = Box::new(MemoryContainerBloom::new_bitmap_size(file.construction_details.limit, file.construction_details.size));
+            } else if matches!(file.construction_details.construction_type, ConstructionType::XXHLimitAndSize {..}) {
+                container = Box::new(MemoryContainerXXH::new_bitmap_size(file.construction_details.limit, file.construction_details.size));
+            } else {
                 eprintln!("Internal Error: Construction type not implemented.");
                 std::process::exit(1);
             }
-        }
-        else {
+        } else {
             eprintln!("Error: Writing to memory is the only yet supported way.");
             std::process::exit(1);
         }
 
-        containers.push(Box::new(container));
+        params.containers.push(container);
     }
 
     // Current container index (we always use last one, as previous ones are treated as full).
     let mut curr_container_idx: usize = 0;
 
+    const BUFFER_CAPACITY: usize = 64 * 1024;
+    let stdout = io::stdout();
+    let handle = stdout.lock();
+    let mut stdout_lock = io::BufWriter::with_capacity(BUFFER_CAPACITY, handle);
+
     for line in stdin().lock().lines() {
         // Processing one line using current container index.
-        process_line(line.unwrap(), params, &mut containers, &mut curr_container_idx);
+        process_line(&line.unwrap(), params, &mut curr_container_idx, &mut stdout_lock);
     }
 
     if params.debug {
@@ -69,8 +72,8 @@ pub fn process(params: &mut Params) {
 }
 
 /// Processes a single line.
-fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Container>>, curr_container_idx: &mut usize) {
-    for (idx, container) in containers.iter().enumerate() {
+fn process_line(line: &String, params: &mut Params, curr_container_idx: &mut usize, stdout_lock: &mut BufWriter<StdoutLock>) {
+    for (idx, container) in params.containers.iter().enumerate() {
         let exists = container.check(&line);
 
         if params.debug {
@@ -83,13 +86,16 @@ fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Cont
         }
     }
 
-    if *curr_container_idx >= containers.len() {
+    if *curr_container_idx >= params.containers.len() {
         // No more containers to write to. Outputting the line.
         if params.debug {
             println!("> Unmatched (bloom size overflow): \"{}\".", line);
         }
         else {
-            println!("{}", line);
+            if !params.silent {
+                stdout_lock.write(line.as_bytes()).unwrap();
+                stdout_lock.write(b"\n").unwrap();
+            }
         }
         return;
     }
@@ -99,7 +105,10 @@ fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Cont
         println!("> Unmatched: \"{}\".", line);
     }
     else {
-        println!("{}", line);
+        if !params.silent {
+            stdout_lock.write(line.as_bytes()).unwrap();
+            stdout_lock.write(b"\n").unwrap();
+        }
     }
 
     if !params.write_mode {
@@ -109,7 +118,7 @@ fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Cont
         return;
     }
 
-    let mut last_container = &mut containers[*curr_container_idx];
+    let mut last_container = &mut params.containers[*curr_container_idx];
 
     if params.debug {
         println!("Writing \"{line}\" into container #{}...", *curr_container_idx);
@@ -117,6 +126,10 @@ fn process_line(line: String, params: &Params, containers: &mut Vec<Box<dyn Cont
 
     // Writing line into current bloom filter.
     last_container.set(&line);
+
+    if params.debug {
+        println!("Written.");
+    }
 
     if last_container.is_full() {
         // We will now use the next container.
@@ -141,8 +154,9 @@ fn debug_args(params: &Params) {
         };
 
         let type_str = match file.construction_details.construction_type {
-            ConstructionType::LinesAndSize => { "limit and size" }
-            ConstructionType::LinesAndErrorRate => { "limit and error-rate" }
+            ConstructionType::BloomLinesAndSize => { "(bloom) limit and size" }
+            ConstructionType::BloomLinesAndErrorRate => { "(bloom) limit and error-rate" },
+            ConstructionType::XXHLimitAndSize => { "(xxhash) limit and error-rate" },
         };
 
         println!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}",
@@ -155,80 +169,3 @@ fn debug_args(params: &Params) {
     }
     println!();
 }
-
-/*
-fn test_input(text: &str) -> bool {
-    match xxh3_64(text.as_bytes()) {
-        TEST => true,
-        _ => false
-    }
-}
-
-fn calculate_crc32(data: &[u8]) -> u32 {
-    let mut hasher = Hasher::new();
-    hasher.update(data);
-    hasher.finalize()
-}
-
-///
-///
-fn generate_bloom_filter(lines: Vec<&str>, bits_size: usize) -> BitSet {
-    let mut bloom_filter = BitSet::with_capacity(bits_size);
-
-    for line in lines {
-        let crc32_sum = calculate_crc32(line.as_bytes());
-        bloom_filter.insert(crc32_sum as usize % bits_size);
-    }
-
-    bloom_filter
-}
-
-fn save_bloom_filter(bloom_filter: &BitSet, file_path: &str, lines_inserted: usize, ) -> Result<(), std::io::Error> {
-    let mut file: File = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(file_path)?;
-
-    // Insert lines_inserted value at the beginning of the file
-    writeln!(file, "{}", lines_inserted)?;
-
-    // Write Bloom filter data to the file
-    for idx in bloom_filter.iter() {
-        writeln!(file, "{}", idx)?;
-    }
-
-    Ok(())
-}
-
-fn write_mode_bloom_filter_file(file_path: &str, bits_size: usize) -> Result<(), std::io::Error> {
-    let bloom_filter = BitSet::with_capacity(bits_size);
-    save_bloom_filter(&bloom_filter, file_path, 0)?;
-    Ok(())
-}
-
-fn load_bloom_filter(file_path: &str) -> Result<(BitSet, usize), io::Error> {
-    let mut bloom_filter = BitSet::new();
-    let mut lines_inserted = 0;
-
-    if Path::new(file_path).exists() {
-        let file = File::open(file_path)?;
-
-        // Read the first line as lines_inserted
-        let mut lines = std::io::BufReader::new(file).lines();
-        if let Some(Ok(value)) = lines.next() {
-            lines_inserted = value
-                .parse()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        }
-
-        // Read the remaining lines as Bloom filter data
-        for line in lines {
-            let idx: usize = line?.parse()?;
-            bloom_filter.insert(idx);
-        }
-    }
-
-    Ok((bloom_filter, lines_inserted))
-}
-*/

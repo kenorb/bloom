@@ -1,14 +1,16 @@
-use bloomfilter::Bloom;
+extern crate bloomfilter;
+
+use self::bloomfilter::Bloom;
 use bloom::containers::container::{Container};
 
-pub(crate) struct MemoryContainer {
+pub(crate) struct MemoryContainerBloom {
     is_acquired: bool,
     num_writes: usize,
     max_writes: usize,
     filter: Bloom<String>,
 }
 
-impl Container for MemoryContainer {
+impl Container for MemoryContainerBloom {
     fn acquire(&mut self) {
         self.is_acquired = true;
     }
@@ -30,7 +32,7 @@ impl Container for MemoryContainer {
     }
 }
 
-impl MemoryContainer {
+impl MemoryContainerBloom {
     pub(crate) fn new(items_count: usize, fp_p: f64) -> Self {
         Self {
             is_acquired: false,
