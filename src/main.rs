@@ -12,7 +12,7 @@ mod bloom {
 }
 
 use std::{env};
-use std::io::{BufRead, Write};
+use std::io::{BufRead};
 use parse_size::parse_size;
 use bloom::containers::container::Container;
 use bloom::process::process;
@@ -147,7 +147,7 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -xls or --xxh-limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
@@ -181,7 +181,7 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -bls or --bloom-limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
@@ -215,7 +215,7 @@ fn main() {
 
                 let pair : Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -ble or --bloom-limit-and-error-rate expects two parameters.");
                     std::process::exit(1);
                 }

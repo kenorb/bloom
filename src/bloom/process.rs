@@ -1,8 +1,8 @@
 use std::io;
-use std::io::{BufRead, BufWriter, stdin, stdout, StdoutLock, Write};
+use std::io::{BufRead, BufWriter, stdin, StdoutLock, Write};
 use memory_stats::memory_stats;
 use ::{Params};
-use ::{bloom, DataSource};
+use ::{DataSource};
 use bloom::containers::container::{Container};
 use bloom::containers::container_memory_bloom::{MemoryContainerBloom};
 use bloom::containers::container_memory_xxh::{MemoryContainerXXH};
@@ -24,8 +24,8 @@ pub fn process(params: &mut Params) {
     }
 
     // Creating memory containers.
-    for (idx, file) in params.containers_details.iter().enumerate() {
-        let container: Box<Container>;
+    for (_idx, file) in params.containers_details.iter().enumerate() {
+        let container: Box<dyn Container>;
 
         if matches!(file.data_source, DataSource::Memory {..}) {
             if matches!(file.construction_details.construction_type, ConstructionType::BloomLinesAndErrorRate {..}) {
@@ -118,7 +118,7 @@ fn process_line(line: &String, params: &mut Params, curr_container_idx: &mut usi
         return;
     }
 
-    let mut last_container = &mut params.containers[*curr_container_idx];
+    let last_container = &mut params.containers[*curr_container_idx];
 
     if params.debug {
         println!("Writing \"{line}\" into container #{}...", *curr_container_idx);
