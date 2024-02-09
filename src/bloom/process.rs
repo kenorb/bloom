@@ -1,8 +1,9 @@
 use std::io;
-use std::io::{BufRead, BufWriter, stdin, StdoutLock, Write};
+use std::io::{BufRead, BufWriter, stdin, stdout, StdoutLock, Write};
+use std::ops::Deref;
 use memory_stats::memory_stats;
 use ::{Params};
-use ::{DataSource};
+use ::{bloom, DataSource};
 use bloom::containers::container::{Container};
 use bloom::containers::container_memory_bloom::{MemoryContainerBloom};
 use bloom::containers::container_memory_xxh::{MemoryContainerXXH};
@@ -20,30 +21,7 @@ pub fn process(params: &mut Params) {
     }
 
     if params.debug {
-        debug_args(&params);
-    }
-
-    // Creating memory containers.
-    for (_idx, file) in params.containers_details.iter().enumerate() {
-        let container: Box<dyn Container>;
-
-        if matches!(file.data_source, DataSource::Memory {..}) {
-            if matches!(file.construction_details.construction_type, ConstructionType::BloomLinesAndErrorRate {..}) {
-                container = Box::new(MemoryContainerBloom::new(file.construction_details.limit, file.construction_details.error_rate));
-            } else if matches!(file.construction_details.construction_type, ConstructionType::BloomLinesAndSize {..}) {
-                container = Box::new(MemoryContainerBloom::new_bitmap_size(file.construction_details.limit, file.construction_details.size));
-            } else if matches!(file.construction_details.construction_type, ConstructionType::XXHLimitAndSize {..}) {
-                container = Box::new(MemoryContainerXXH::new_bitmap_size(file.construction_details.limit, file.construction_details.size));
-            } else {
-                eprintln!("Internal Error: Construction type not implemented.");
-                std::process::exit(1);
-            }
-        } else {
-            eprintln!("Error: Writing to memory is the only yet supported way.");
-            std::process::exit(1);
-        }
-
-        params.containers.push(container);
+        debug_args(params);
     }
 
     // Current container index (we always use last one, as previous ones are treated as full).
@@ -72,21 +50,49 @@ pub fn process(params: &mut Params) {
 }
 
 /// Processes a single line.
-fn process_line(line: &String, params: &mut Params, curr_container_idx: &mut usize, stdout_lock: &mut BufWriter<StdoutLock>) {
-    for (idx, container) in params.containers.iter().enumerate() {
-        let exists = container.check(&line);
+fn process_line(line: &String, params: &mut Params, curr_writable_container_idx: &mut usize, stdout_lock: &mut BufWriter<StdoutLock>) {
+    // Whether line previously existed in any of the containers.
+    let mut had_value = false;
 
-        if params.debug {
-            println!("Input: \"{line}\". Checking container #{idx} - {}", if exists { "String exists" } else { "String does not exist" });
+    // Whether line was written into the currently writable container (via check_and_set()).
+    let mut did_set = false;
+
+    for (idx, ref mut container) in params.containers.iter_mut().enumerate() {
+        if params.write_mode && idx < *curr_writable_container_idx {
+            // In write mode we only check for the containers up to the currently writable one. Other containers are
+            // empty, so there is no sense in checking what's there.
+            break;
         }
 
-        if exists {
+        if idx == *curr_writable_container_idx {
+            // We can only insert to the currently writable container.
+            if !container.is_full() {
+                // But only if it's not full!
+                had_value = container.check_and_set(&line);
+                // We're sure that if there were no value then it was written.
+                did_set = true;
+            }
+            else {
+                // If it's full then we fall back into normal check as we can't write into it.
+                had_value = container.check(&line);
+            }
+        }
+        else {
+            // If container is not the currently writable one then we only check if value exists.
+            had_value = container.check(&line);
+        }
+
+        if params.debug {
+            println!("Input: \"{line}\". Checking container #{idx} - {}", if had_value { "String exists" } else { "String does not exist" });
+        }
+
+        if had_value {
             // Potential match found. We're done.
             return;
         }
     }
 
-    if *curr_container_idx >= params.containers.len() {
+    if *curr_writable_container_idx >= params.containers.len() {
         // No more containers to write to. Outputting the line.
         if params.debug {
             println!("> Unmatched (bloom size overflow): \"{}\".", line);
@@ -113,15 +119,15 @@ fn process_line(line: &String, params: &mut Params, curr_container_idx: &mut usi
 
     if !params.write_mode {
         if params.debug {
-            println!("Not writing \"{line}\" into container #{} as -w was not passed.", *curr_container_idx);
+            println!("Not writing \"{line}\" into container #{} as -w was not passed.", *curr_writable_container_idx);
         }
         return;
     }
 
-    let last_container = &mut params.containers[*curr_container_idx];
+    let mut last_container = &mut params.containers[*curr_writable_container_idx];
 
     if params.debug {
-        println!("Writing \"{line}\" into container #{}...", *curr_container_idx);
+        println!("Writing \"{line}\" into container #{}...", *curr_writable_container_idx);
     }
 
     // Writing line into current bloom filter.
@@ -134,37 +140,43 @@ fn process_line(line: &String, params: &mut Params, curr_container_idx: &mut usi
     if last_container.is_full() {
         // We will now use the next container.
         if params.debug {
-            println!("Container #{} is now full.", *curr_container_idx);
+            println!("Container #{} is now full.", *curr_writable_container_idx);
         }
-        *curr_container_idx += 1;
+        *curr_writable_container_idx += 1;
     }
 }
 
-fn debug_args(params: &Params) {
+fn debug_args(params: &mut Params) {
     println!("[ INPUT ARGUMENTS ]");
     println!(" - debug:      {}", if params.debug { "True" } else { "False" });
     println!(" - write:      {}", if params.write_mode { "True" } else { "False" });
 
     println!();
     println!("[ CONTAINERS ]");
-    for (_i, file) in params.containers_details.iter().enumerate() {
-        let kind_str = match file.data_source {
+    if params.containers.is_empty() {
+        println!(" < No containers added >");
+    }
+
+    for (_i, container) in params.containers.iter_mut().enumerate() {
+        let container_details = container.get_container_details();
+
+        let kind_str = match container_details.data_source {
             DataSource::Memory => { "memory" }
             DataSource::File => { "file" }
         };
 
-        let type_str = match file.construction_details.construction_type {
+        let type_str = match container_details.construction_details.construction_type {
             ConstructionType::BloomLinesAndSize => { "(bloom) limit and size" }
             ConstructionType::BloomLinesAndErrorRate => { "(bloom) limit and error-rate" },
             ConstructionType::XXHLimitAndSize => { "(xxhash) limit and error-rate" },
         };
 
         println!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}",
-                 file.path,
+                 container_details.path,
                  type_str,
-                 file.construction_details.size,
-                 file.construction_details.error_rate,
-                 file.construction_details.limit
+                 container_details.construction_details.size,
+                 container_details.construction_details.error_rate,
+                 container_details.construction_details.limit
         );
     }
     println!();

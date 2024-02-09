@@ -4,7 +4,8 @@ extern crate crc32fast;
 extern crate parse_size;
 extern crate memory_stats;
 extern crate xxhash_rust;
-
+extern crate byteorder;
+extern crate num_enum;
 
 mod bloom {
     pub mod containers;
@@ -12,7 +13,11 @@ mod bloom {
 }
 
 use std::{env};
-use std::io::{BufRead};
+use std::cmp::max;
+use std::fmt::format;
+use std::io::{BufRead, Write};
+use std::path::Path;
+use num_enum::TryFromPrimitive;
 use parse_size::parse_size;
 use bloom::containers::container::Container;
 use bloom::process::process;
@@ -23,7 +28,8 @@ enum DataSource {
     File
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, TryFromPrimitive)]
+#[repr(u8)]
 enum ConstructionType {
     // -bls NUM,NUM[UNIT]
     BloomLinesAndSize,
@@ -63,6 +69,10 @@ fn print_help() {
     println!("USAGE:");
     println!("  bloom_filter [OPTIONS]");
     println!();
+    println!("DEFAULT BEHAVIOR:");
+    println!();
+    println!("  When ran without options, one 1Gb xxHash-based with 1M write limit (-xls 1M,1Gb) memory container will be used.");
+    println!();
     println!("OPTIONS:");
     println!();
     println!("  -f,   --file FILE                            Specifies Bloom filter file. You may specify multiple files.");
@@ -79,16 +89,16 @@ fn print_help() {
     println!("                                               size in bytes or given unit. Use -bls once to specify settings for all");
     println!("                                               files or use it multiple times for each file.");
     println!();
-    println!("  -ble, --bloom-lines-and-error-rate NUM,NUM  Uses bloom filter. First number limits the number of lines to write into");
-    println!("                                              the Bloom filter for each file. Second number specifies wanted error rate");
-    println!("                                              for the given file (> 0 and < 1). Use -ble once to specify settings for");
-    println!("                                              all files or use it multiple times for each file.");
+    println!("  -ble, --bloom-lines-and-error-rate NUM,NUM   Uses bloom filter. First number limits the number of lines to write into");
+    println!("                                               the Bloom filter for each file. Second number specifies wanted error rate");
+    println!("                                               for the given file (> 0 and < 1). Use -ble once to specify settings for");
+    println!("                                               all files or use it multiple times for each file.");
     println!();
-    println!("  -d,  --debug                                Will output debug information.");
+    println!("  -d,  --debug                                 Will output debug information.");
     println!();
-    println!("  -h,  --help                                 Prints help and usage information.");
+    println!("  -h,  --help                                  Prints help and usage information.");
     println!();
-    println!("  -s,  --silent                               Performs processing but doesn't output anything except -d debug info.");
+    println!("  -s,  --silent                                Performs processing but doesn't output anything except -d debug info.");
     println!();
     println!("EXAMPLES:");
     println!();
@@ -147,7 +157,7 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if pair.len() != 2 {
+                if (pair.len() != 2) {
                     eprintln!("Error: -xls or --xxh-limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
@@ -181,7 +191,7 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if pair.len() != 2 {
+                if (pair.len() != 2) {
                     eprintln!("Error: -bls or --bloom-limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
@@ -215,7 +225,7 @@ fn main() {
 
                 let pair : Vec<&str> = value.split(",").collect();
 
-                if pair.len() != 2 {
+                if (pair.len() != 2) {
                     eprintln!("Error: -ble or --bloom-limit-and-error-rate expects two parameters.");
                     std::process::exit(1);
                 }
@@ -277,29 +287,63 @@ fn main() {
         params.write_mode = true;
     }
 
-    if !file_paths.is_empty() {
-        eprintln!("Error: Writing to/reading from files is not yet supported.");
+    if !file_paths.is_empty() && constructions_details.len() > 1 && constructions_details.len() != file_paths.len() {
+        eprintln!("Error: Number of passed -xls / -bls / -ble parameters should be exactly zero or one or match the number of file paths.");
         std::process::exit(1);
     }
 
-    if params.write_mode {
-        if file_paths.len() > 1 && file_paths.len() != constructions_details.len() {
-            eprintln!("Error: Number of passed -le or -ls parameters should be exactly one or match the number of file paths.");
-            std::process::exit(1);
+    if constructions_details.is_empty() {
+        // Adding default xxHash memory containers (one or number of file paths passed).
+        let num_containers = max(1, file_paths.len());
+        for idx in 0 .. num_containers {
+            params.containers.push(Container::from_details(ContainerDetails {
+                path: if file_paths.is_empty()  { format!("memory.{idx}.out") } else { file_paths[idx].to_string() },
+                construction_details: ConstructionDetails {
+                    size: parse_size("1Gb").unwrap() as usize,
+                    error_rate: 0.0,
+                    limit: parse_size("1M").unwrap() as usize,
+                    construction_type: ConstructionType::XXHLimitAndSize
+                },
+                data_source: if file_paths.is_empty() { DataSource::Memory } else { DataSource::File },
+            }));
         }
     }
 
-    // Building up list of ContainerDetails structures.
-
-    let num_containers = constructions_details.len();
-
-    for idx in 0 .. num_containers {
-        params.containers_details.push(ContainerDetails {
-            path: format!("<memory #{idx}>"),
-            construction_details: constructions_details[idx],
-            data_source: DataSource::Memory,
-        });
+    if !file_paths.is_empty() {
+        // Adding file containers.
+        for (idx, ref mut construction_details) in constructions_details.iter_mut().enumerate() {
+            let path = file_paths[idx].to_string();
+            if Path::new(&path).exists() {
+                // Creating container from existing file. Input parameters will be overridden by those inside file's
+                // header.
+                params.containers.push(Container::from_file(&path));
+            }
+            else {
+                params.containers.push(Container::from_details(ContainerDetails {
+                    path: path,
+                    construction_details: **construction_details,
+                    data_source: DataSource::File,
+                }));
+            }
+        }
+    }
+    else if !constructions_details.is_empty() {
+        // Adding memory containers.
+        for (idx, ref mut construction_details) in constructions_details.iter_mut().enumerate() {
+            params.containers.push(Container::from_details(ContainerDetails {
+                path: format!("memory.{idx}.blm"),
+                construction_details: **construction_details,
+                data_source: DataSource::Memory,
+            }));
+        }
     }
 
     process(&mut params);
+
+    if params.write_mode {
+        // Writing file containers.
+        for (_i, container) in params.containers.iter_mut().enumerate() {
+            container.save();
+        }
+    }
 }
