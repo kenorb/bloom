@@ -14,8 +14,8 @@ mod bloom {
 
 use std::{env};
 use std::cmp::max;
-use std::fmt::format;
-use std::io::{BufRead, Write};
+
+use std::io::{BufRead};
 use std::path::Path;
 use num_enum::TryFromPrimitive;
 use parse_size::parse_size;
@@ -48,7 +48,7 @@ struct ConstructionDetails {
     size: usize,
 }
 
-struct ContainerDetails {
+pub struct ContainerDetails {
     path: String,
     data_source: DataSource,
     construction_details: ConstructionDetails
@@ -157,7 +157,7 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -xls or --xxh-limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
@@ -191,7 +191,7 @@ fn main() {
 
                 let pair: Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -bls or --bloom-limit-and-size expects two parameters.");
                     std::process::exit(1);
                 }
@@ -225,7 +225,7 @@ fn main() {
 
                 let pair : Vec<&str> = value.split(",").collect();
 
-                if (pair.len() != 2) {
+                if pair.len() != 2 {
                     eprintln!("Error: -ble or --bloom-limit-and-error-rate expects two parameters.");
                     std::process::exit(1);
                 }
@@ -296,7 +296,7 @@ fn main() {
         // Adding default xxHash memory containers (one or number of file paths passed).
         let num_containers = max(1, file_paths.len());
         for idx in 0 .. num_containers {
-            params.containers.push(Container::from_details(ContainerDetails {
+            params.containers.push(<dyn Container>::from_details(ContainerDetails {
                 path: if file_paths.is_empty()  { format!("memory.{idx}.out") } else { file_paths[idx].to_string() },
                 construction_details: ConstructionDetails {
                     size: parse_size("1Gb").unwrap() as usize,
@@ -316,10 +316,10 @@ fn main() {
             if Path::new(&path).exists() {
                 // Creating container from existing file. Input parameters will be overridden by those inside file's
                 // header.
-                params.containers.push(Container::from_file(&path));
+                params.containers.push(<dyn Container>::from_file(&path));
             }
             else {
-                params.containers.push(Container::from_details(ContainerDetails {
+                params.containers.push(<dyn Container>::from_details(ContainerDetails {
                     path: path,
                     construction_details: **construction_details,
                     data_source: DataSource::File,
@@ -330,7 +330,7 @@ fn main() {
     else if !constructions_details.is_empty() {
         // Adding memory containers.
         for (idx, ref mut construction_details) in constructions_details.iter_mut().enumerate() {
-            params.containers.push(Container::from_details(ContainerDetails {
+            params.containers.push(<dyn Container>::from_details(ContainerDetails {
                 path: format!("memory.{idx}.blm"),
                 construction_details: **construction_details,
                 data_source: DataSource::Memory,
