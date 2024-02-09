@@ -4,7 +4,7 @@ use std::fs::File;
 use byteorder::{LittleEndian, WriteBytesExt};
 use self::bloomfilter::Bloom;
 use bloom::containers::container::{Container};
-use ::{ConstructionDetails, ContainerDetails};
+use ::{ContainerDetails};
 
 pub(crate) struct MemoryContainerBloom {
     container_details: ContainerDetails,
@@ -58,7 +58,7 @@ impl Container for MemoryContainerBloom {
     }
 
     /// Loads filter data content from the given, already opened file.
-    fn load_content(&mut self, file: &File) {
+    fn load_content(&mut self, _file: &File) {
 
     }
 }

@@ -1,12 +1,12 @@
 use std::io;
-use std::io::{BufRead, BufWriter, stdin, stdout, StdoutLock, Write};
-use std::ops::Deref;
+use std::io::{BufRead, BufWriter, stdin, StdoutLock, Write};
+
 use memory_stats::memory_stats;
 use ::{Params};
-use ::{bloom, DataSource};
+use ::{DataSource};
 use bloom::containers::container::{Container};
-use bloom::containers::container_memory_bloom::{MemoryContainerBloom};
-use bloom::containers::container_memory_xxh::{MemoryContainerXXH};
+
+
 use ConstructionType;
 
 
@@ -124,7 +124,7 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
         return;
     }
 
-    let mut last_container = &mut params.containers[*curr_writable_container_idx];
+    let last_container = &mut params.containers[*curr_writable_container_idx];
 
     if params.debug {
         println!("Writing \"{line}\" into container #{}...", *curr_writable_container_idx);

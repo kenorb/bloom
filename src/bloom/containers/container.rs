@@ -1,9 +1,9 @@
 use std::fs::File;
-use std::io::{Cursor, Write};
+
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use byteorder::LittleEndian;
 use ::{ConstructionDetails, ConstructionType};
-use num_enum::TryFromPrimitive;
+
 use std::convert::TryFrom;
 use bloom::containers::container_memory_bloom::MemoryContainerBloom;
 use bloom::containers::container_memory_xxh::MemoryContainerXXH;
@@ -77,9 +77,9 @@ pub trait Container
     fn load_content(&mut self, file: &File);
 }
 
-impl Container {
+impl dyn Container {
     // Creates container from container details.
-    pub fn from_details(container_details: ContainerDetails) -> Box<Container> {
+    pub fn from_details(container_details: ContainerDetails) -> Box<dyn Container> {
         if matches!(container_details.construction_details.construction_type, ConstructionType::BloomLinesAndErrorRate {..}) {
             return Box::new(MemoryContainerBloom::new_limit_and_error_rate(container_details));
         } else if matches!(container_details.construction_details.construction_type, ConstructionType::BloomLinesAndSize {..}) {
@@ -93,7 +93,7 @@ impl Container {
     }
 
     // Creates container from existing file.
-    pub fn from_file(path: &String) -> Box<Container> {
+    pub fn from_file(path: &String) -> Box<dyn Container> {
         println!("Creating container from file \"{path}\"...");
 
         let mut file = File::open(path).unwrap_or_else(|_| {
@@ -133,7 +133,7 @@ impl Container {
             file.read_u8().unwrap();
         }
 
-        let mut container = Container::from_details(ContainerDetails {
+        let mut container = <dyn Container>::from_details(ContainerDetails {
             path: path.to_string(),
             construction_details,
             data_source: DataSource::File

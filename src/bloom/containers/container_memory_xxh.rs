@@ -1,13 +1,13 @@
 use std::fs::File;
 use bit_vec::BitVec;
-use byteorder::{LittleEndian};
-use std::io::{Write, Result, Read, BufWriter};
-use bit_set::BitSet;
+
+use std::io::{Write, Read, BufWriter};
+
 
 use bloom::containers::container::{Container};
 use xxhash_rust::xxh3::xxh3_64;
-use ::{ConstructionDetails};
-use ::{ContainerDetails, DataSource};
+
+use ::{ContainerDetails};
 
 pub(crate) struct MemoryContainerXXH {
     container_details: ContainerDetails,
