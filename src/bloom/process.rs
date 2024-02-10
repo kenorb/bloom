@@ -38,13 +38,13 @@ pub fn process(params: &mut Params) {
     }
 
     if params.debug {
-        println!();
-        println!("[ MEMORY USAGE ]");
+        eprintln!();
+        eprintln!("[ MEMORY USAGE ]");
         if let Some(usage) = memory_stats() {
-            println!("Physical memory used: {:.2} MiB.", (usage.physical_mem - initial_physical_mem) as f64 / 1024.0 / 1024.0);
-            println!(" Virtual memory used: {:.2} MiB.", (usage.virtual_mem - initial_virtual_mem) as f64 / 1024.0 / 1024.0);
+            eprintln!("Physical memory used: {:.2} MiB.", (usage.physical_mem - initial_physical_mem) as f64 / 1024.0 / 1024.0);
+            eprintln!("Virtual memory used: {:.2} MiB.", (usage.virtual_mem - initial_virtual_mem) as f64 / 1024.0 / 1024.0);
         } else {
-            println!("Couldn't get the current memory usage :(");
+            eprintln!("Couldn't get the current memory usage :(");
         }
     }
 }
@@ -83,7 +83,7 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
         }
 
         if params.debug {
-            println!("Input: \"{line}\". Checking container #{idx} - {}", if had_value { "String exists" } else { "String does not exist" });
+            eprintln!("Input: \"{line}\". Checking container #{idx} - {}", if had_value { "String exists" } else { "String does not exist" });
         }
 
         if had_value {
@@ -95,7 +95,7 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
     if *curr_writable_container_idx >= params.containers.len() {
         // No more containers to write to. Outputting the line.
         if params.debug {
-            println!("> Unmatched (bloom size overflow): \"{}\".", line);
+            eprintln!("> Unmatched (bloom size overflow): \"{}\".", line);
         }
         else {
             if !params.silent {
@@ -108,7 +108,7 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
 
     // No match found in all containers.
     if params.debug {
-        println!("> Unmatched: \"{}\".", line);
+        eprintln!("> Unmatched: \"{}\".", line);
     }
     else {
         if !params.silent {
@@ -119,7 +119,7 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
 
     if !params.write_mode {
         if params.debug {
-            println!("Not writing \"{line}\" into container #{} as -w was not passed.", *curr_writable_container_idx);
+            eprintln!("Not writing \"{line}\" into container #{} as -w was not passed.", *curr_writable_container_idx);
         }
         return;
     }
@@ -127,34 +127,34 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
     let last_container = &mut params.containers[*curr_writable_container_idx];
 
     if params.debug {
-        println!("Writing \"{line}\" into container #{}...", *curr_writable_container_idx);
+        eprintln!("Writing \"{line}\" into container #{}...", *curr_writable_container_idx);
     }
 
     // Writing line into current bloom filter.
     last_container.set(&line);
 
     if params.debug {
-        println!("Written.");
+        eprintln!("Written.");
     }
 
     if last_container.is_full() {
         // We will now use the next container.
         if params.debug {
-            println!("Container #{} is now full.", *curr_writable_container_idx);
+            eprintln!("Container #{} is now full.", *curr_writable_container_idx);
         }
         *curr_writable_container_idx += 1;
     }
 }
 
 fn debug_args(params: &mut Params) {
-    println!("[ INPUT ARGUMENTS ]");
-    println!(" - debug:      {}", if params.debug { "True" } else { "False" });
-    println!(" - write:      {}", if params.write_mode { "True" } else { "False" });
+    eprintln!("[ INPUT ARGUMENTS ]");
+    eprintln!(" - debug:      {}", if params.debug { "True" } else { "False" });
+    eprintln!(" - write:      {}", if params.write_mode { "True" } else { "False" });
 
-    println!();
-    println!("[ CONTAINERS ]");
+    eprintln!();
+    eprintln!("[ CONTAINERS ]");
     if params.containers.is_empty() {
-        println!(" < No containers added >");
+        eprintln!(" < No containers added >");
     }
 
     for (_i, container) in params.containers.iter_mut().enumerate() {
@@ -171,7 +171,7 @@ fn debug_args(params: &mut Params) {
             ConstructionType::XXHLimitAndSize => { "(xxhash) limit and error-rate" },
         };
 
-        println!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}",
+        eprintln!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}",
                  container_details.path,
                  type_str,
                  container_details.construction_details.size,
@@ -179,5 +179,5 @@ fn debug_args(params: &mut Params) {
                  container_details.construction_details.limit
         );
     }
-    println!();
+    eprintln!();
 }

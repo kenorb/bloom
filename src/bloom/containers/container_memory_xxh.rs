@@ -69,10 +69,10 @@ impl Container for MemoryContainerXXH {
 
     /// Saves filter data content to the given, already opened for write file.
     fn save_content(&mut self, file: &mut File) {
-        println!("Starting write");
+        eprintln!("Starting write");
         let mut buf_writer = BufWriter::with_capacity(10000000, file);
         buf_writer.write_all(&self.bitvec.to_bytes()).unwrap();
-        println!("Finished write");
+        eprintln!("Finished write");
     }
 
     /// Loads filter data content from the given, already opened file.

@@ -40,7 +40,7 @@ pub trait Container
     fn save(&mut self) {
         let path = &self.get_container_details().path;
 
-        println!("Saving container into \"{path}\"...");
+        eprintln!("Saving container into \"{path}\"...");
 
         let mut file = File::create(path).unwrap();
 
@@ -94,7 +94,7 @@ impl dyn Container {
 
     // Creates container from existing file.
     pub fn from_file(path: &String) -> Box<dyn Container> {
-        println!("Creating container from file \"{path}\"...");
+        eprintln!("Creating container from file \"{path}\"...");
 
         let mut file = File::open(path).unwrap_or_else(|_| {
             eprintln!("Error: Can't open file \"{}\" for reading!", path);
