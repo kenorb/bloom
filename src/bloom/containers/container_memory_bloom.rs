@@ -54,7 +54,7 @@ impl Container for MemoryContainerBloom {
 
     /// Saves filter data content to the given, already opened for write file.
     fn save_content(&mut self, file: &mut File) {
-        file.write_u32::<LittleEndian>(0xFFEEDDBB);
+        file.write_u32::<LittleEndian>(0xFFEEDDBB).unwrap();
     }
 
     /// Loads filter data content from the given, already opened file.

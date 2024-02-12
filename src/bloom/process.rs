@@ -4,8 +4,6 @@ use std::io::{BufRead, BufWriter, stdin, StdoutLock, Write};
 use memory_stats::memory_stats;
 use ::{Params};
 use ::{DataSource};
-use bloom::containers::container::{Container};
-
 
 use ConstructionType;
 
@@ -30,14 +28,17 @@ pub fn process(params: &mut Params) {
     const BUFFER_CAPACITY: usize = 64 * 1024;
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut stdout_lock = io::BufWriter::with_capacity(BUFFER_CAPACITY, handle);
 
-    for line in stdin().lock().lines() {
-        // Processing one line using current container index.
-        process_line(&line.unwrap(), params, &mut curr_container_idx, &mut stdout_lock);
+    {
+        let mut stdout_lock = io::BufWriter::with_capacity(BUFFER_CAPACITY, handle);
+
+        for line in stdin().lock().lines() {
+            // Processing one line using current container index.
+            process_line(&line.unwrap(), params, &mut curr_container_idx, &mut stdout_lock);
+        }
     }
 
-    if params.debug {
+    if params.debug_memory {
         eprintln!();
         eprintln!("[ MEMORY USAGE ]");
         if let Some(usage) = memory_stats() {
@@ -52,10 +53,10 @@ pub fn process(params: &mut Params) {
 /// Processes a single line.
 fn process_line(line: &String, params: &mut Params, curr_writable_container_idx: &mut usize, stdout_lock: &mut BufWriter<StdoutLock>) {
     // Whether line previously existed in any of the containers.
-    let mut had_value = false;
+    let mut had_value: bool;
 
     // Whether line was written into the currently writable container (via check_and_set()).
-    let mut did_set = false;
+    let mut _did_set: bool;
 
     for (idx, ref mut container) in params.containers.iter_mut().enumerate() {
         if params.write_mode && idx < *curr_writable_container_idx {
@@ -70,7 +71,7 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
                 // But only if it's not full!
                 had_value = container.check_and_set(&line);
                 // We're sure that if there were no value then it was written.
-                did_set = true;
+                _did_set = true;
             }
             else {
                 // If it's full then we fall back into normal check as we can't write into it.
@@ -83,10 +84,30 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
         }
 
         if params.debug {
-            eprintln!("Input: \"{line}\". Checking container #{idx} - {}", if had_value { "String exists" } else { "String does not exist" });
+            eprintln!("Input: \"{line}\". Checking container #{idx} - {}", if had_value { "String did exist" } else { "String did not exist" });
         }
 
-        if had_value {
+        if params.inverse {
+            if had_value {
+                // Value did exist, outputting the line.
+                if params.debug {
+                    eprintln!("> Inverse matched (string already exist)");
+                }
+
+                if !params.silent {
+                    stdout_lock.write(line.as_bytes()).unwrap();
+                    stdout_lock.write(b"\n").unwrap();
+                }
+            }
+            else {
+                if params.debug {
+                    eprintln!("> Inverse unmatched (string didn't exist)");
+                }
+            }
+            // If value didn't exist then it was saved, and we can check another line.
+            return;
+        }
+        else if !params.inverse && had_value {
             // Potential match found. We're done.
             return;
         }
@@ -97,11 +118,10 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
         if params.debug {
             eprintln!("> Unmatched (bloom size overflow): \"{}\".", line);
         }
-        else {
-            if !params.silent {
-                stdout_lock.write(line.as_bytes()).unwrap();
-                stdout_lock.write(b"\n").unwrap();
-            }
+
+        if !params.silent {
+            stdout_lock.write(line.as_bytes()).unwrap();
+            stdout_lock.write(b"\n").unwrap();
         }
         return;
     }
@@ -110,11 +130,10 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
     if params.debug {
         eprintln!("> Unmatched: \"{}\".", line);
     }
-    else {
-        if !params.silent {
-            stdout_lock.write(line.as_bytes()).unwrap();
-            stdout_lock.write(b"\n").unwrap();
-        }
+
+    if !params.silent {
+        stdout_lock.write(line.as_bytes()).unwrap();
+        stdout_lock.write(b"\n").unwrap();
     }
 
     if !params.write_mode {
@@ -150,6 +169,8 @@ fn debug_args(params: &mut Params) {
     eprintln!("[ INPUT ARGUMENTS ]");
     eprintln!(" - debug:      {}", if params.debug { "True" } else { "False" });
     eprintln!(" - write:      {}", if params.write_mode { "True" } else { "False" });
+    eprintln!(" - silent:     {}", if params.silent { "True" } else { "False" });
+    eprintln!(" - inverse:    {}", if params.inverse { "True" } else { "False" });
 
     eprintln!();
     eprintln!("[ CONTAINERS ]");
