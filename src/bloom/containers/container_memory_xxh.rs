@@ -14,8 +14,17 @@ pub(crate) struct MemoryContainerXXH {
     is_acquired: bool,
     num_writes: usize,
     max_writes: usize,
-    bitvec: BitVec,
-    hash_bits: usize
+    bitvec: BitVec
+}
+
+/// Performs input value scaling.
+fn remap(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
+    return out_min + (value - in_min) * (out_max - out_min) / (in_max - in_min);
+}
+
+fn calc_index(container: &MemoryContainerXXH, hash: u64) -> usize {
+    let size = container.bitvec.len();
+    return remap(hash as f64, 0f64, u64::MAX as f64, 0f64, (size - 1) as f64) as usize;
 }
 
 impl Container for MemoryContainerXXH {
@@ -32,8 +41,8 @@ impl Container for MemoryContainerXXH {
     /// Inserts value into the filter.
     fn set(&mut self, value: &String) {
         let hash = xxh3_64(value.as_bytes());
-        let base_index = hash % self.bitvec.len() as u64;
-        self.bitvec.set(base_index as usize, true);
+        let base_index = calc_index(self, hash);
+        self.bitvec.set(base_index, true);
         self.num_writes += 1;
     }
 
@@ -41,18 +50,18 @@ impl Container for MemoryContainerXXH {
     fn check(&self, value: &String) -> bool {
         // Very naive version of check. Just for testing purposes.
         let hash = xxh3_64(value.as_bytes());
-        let base_index = hash % self.bitvec.len() as u64;
-        return self.bitvec.get(base_index as usize).unwrap();
+        let base_index = calc_index(self, hash);
+        return self.bitvec.get(base_index).unwrap();
     }
 
     /// Checks whether filter could have given value and if no, inserts the value. Returns true if value could have
     /// existed.
     fn check_and_set(&mut self, value: &String) -> bool {
         let hash = xxh3_64(value.as_bytes());
-        let base_index = hash % self.bitvec.len() as u64;
-        let had_value = self.bitvec.get(base_index as usize).unwrap();
+        let base_index = calc_index(self, hash);
+        let had_value = self.bitvec.get(base_index).unwrap();
         if !had_value {
-            self.bitvec.get(base_index as usize).unwrap();
+            self.bitvec.set(base_index, true);
         }
         return had_value;
     }
@@ -80,7 +89,7 @@ impl Container for MemoryContainerXXH {
         let construction_details = &self.get_container_details();
 
         let mut bytes = Vec::new();
-        bytes.reserve_exact(construction_details.construction_details.size);
+        bytes.reserve_exact(construction_details.construction_details.size * 8);
         file.read_to_end(&mut bytes).unwrap();
 
         self.bitvec = BitVec::from_bytes(&bytes);
@@ -93,26 +102,8 @@ impl MemoryContainerXXH {
             is_acquired: false,
             num_writes: 0,
             max_writes: container_details.construction_details.limit,
-            bitvec: BitVec::from_elem(container_details.construction_details.size, false),
-            hash_bits: Self::num_bits_required(container_details.construction_details.size),
+            bitvec: BitVec::from_elem(container_details.construction_details.size * 8, false),
             container_details,
         }
-    }
-
-    fn num_bits_required(value: usize) -> usize {
-        if value == 0 {
-            // If the value is 0, it still requires at least 1 bit to represent.
-            return 1;
-        }
-
-        let mut num_bits = 0;
-        let mut n = value;
-
-        while n != 0 {
-            num_bits += 1;
-            n >>= 1;
-        }
-
-        num_bits
     }
 }

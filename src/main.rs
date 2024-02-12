@@ -15,7 +15,6 @@ mod bloom {
 use std::{env};
 use std::cmp::max;
 
-use std::io::{BufRead};
 use std::path::Path;
 use num_enum::TryFromPrimitive;
 use parse_size::parse_size;
@@ -56,10 +55,11 @@ pub struct ContainerDetails {
 
 pub struct Params {
     debug: bool,
-    containers_details: Vec<ContainerDetails>,
+    debug_memory: bool,
     write_mode: bool,
     containers: Vec<Box<dyn Container>>,
-    silent: bool
+    silent: bool,
+    inverse: bool
 }
 
 fn print_help() {
@@ -75,30 +75,35 @@ fn print_help() {
     println!();
     println!("OPTIONS:");
     println!();
-    println!("  -f,   --file FILE                            Specifies Bloom filter file. You may specify multiple files.");
+    println!("  -f,   --file FILE                           Specifies Bloom filter file. You may specify multiple files.");
     println!();
-    println!("  -w,   --write                                Creates an empty Bloom filter file or updates an existing one.");
+    println!("  -w,   --write                               Creates an empty Bloom filter file or updates an existing one.");
     println!();
-    println!("  -xls,  --xxh-limit-and-size NUM[UNIT]        Uses xxHash filter. First number limits the number of lines to write into");
-    println!("                                               the Bloom filter for each file. Second number specifies Bloom filter size");
-    println!("                                               in bytes or given unit. Use -xls once to specify settings for all files");
-    println!("                                               or use it multiple times for each file.");
+    println!("  -xls,  --xxh-limit-and-size NUM,NUM         Uses xxHash filter. First number limits the number of lines to write into");
+    println!("                                              the Bloom filter for each file. You can use K, M & G units for the limit.");
+    println!("                                              Second number specifies Bloom filter size in bytes or given unit.");
+    println!("                                              Use -xls once to specify settings for all files or use it multiple times");
+    println!("                                              for each file.");
     println!();
-    println!("  -bls,  --bloom-lines-and-size NUM,NUM[UNIT]  Uses bloom filter. First number limits the number of lines to write into");
-    println!("                                               the Bloom filter for each. file. Second number specifies Bloom filter");
-    println!("                                               size in bytes or given unit. Use -bls once to specify settings for all");
-    println!("                                               files or use it multiple times for each file.");
+    println!("  -bls,  --bloom-lines-and-size NUM,NUM       Uses bloom filter. First number limits the number of lines to write into");
+    println!("                                              the Bloom filter for each. file. You can use K, M & G units for the limit.");
+    println!("                                              Second number specifies Bloom filter size in bytes or given unit. Use -bls");
+    println!("                                              once to specify settings for all files or use it multiple times for each");
+    println!("                                              file.");
     println!();
-    println!("  -ble, --bloom-lines-and-error-rate NUM,NUM   Uses bloom filter. First number limits the number of lines to write into");
-    println!("                                               the Bloom filter for each file. Second number specifies wanted error rate");
-    println!("                                               for the given file (> 0 and < 1). Use -ble once to specify settings for");
-    println!("                                               all files or use it multiple times for each file.");
+    println!("  -ble, --bloom-lines-and-error-rate NUM,NUM  Uses bloom filter. First number limits the number of lines to write into");
+    println!("                                              the Bloom filter for each file. You can use K, M & G units for the limit.");
+    println!("                                              for the given file (> 0 and < 1). Use -ble once to specify settings for");
+    println!("                                              all files or use it multiple times for each file.");
     println!();
-    println!("  -d,  --debug                                 Will output debug information.");
+    println!("  -i,  --inverse                              Will output lines that .");
     println!();
-    println!("  -h,  --help                                  Prints help and usage information.");
+    println!("  -d,  --debug                                Will output debug information.");
+    println!("  -dm,  --debug-memory                        Will output debug information about memory usage.");
     println!();
-    println!("  -s,  --silent                                Performs processing but doesn't output anything except -d debug info.");
+    println!("  -h,  --help                                 Prints help and usage information.");
+    println!();
+    println!("  -s,  --silent                               Performs processing but doesn't output anything except -d debug info.");
     println!();
     println!("EXAMPLES:");
     println!();
@@ -113,10 +118,11 @@ fn print_help() {
 fn main() {
     let mut params = Params {
         debug: false,
-        containers_details: vec![],
+        debug_memory: false,
         write_mode: false,
         containers: Vec::new(),
-        silent: false
+        silent: false,
+        inverse: false
     };
 
     // List of passed file paths.
@@ -260,8 +266,14 @@ fn main() {
             // Whether we want to update (write to) Bloom filter files.
             "-w" | "--write" => params.write_mode = true,
 
+            // Will inverse functionality.
+            "-i" | "--inverse" => params.inverse = true,
+
             // Will output debug information.
             "-d" | "--debug" => params.debug = true,
+
+            // Will output debug information about memory usage.
+            "-dm" | "--debug-memory" => params.debug_memory = true,
 
             // Silent mode.
             "-s" | "--silent" => params.silent = true,
@@ -281,6 +293,10 @@ fn main() {
     }
 
     // Checking arguments.
+
+    if params.debug {
+        params.debug_memory = true
+    }
 
     if file_paths.is_empty() && !params.write_mode {
         // When no paths were given then we're assuming that we work on the memory, so need to enable writing.
@@ -343,7 +359,10 @@ fn main() {
     if params.write_mode {
         // Writing file containers.
         for (_i, container) in params.containers.iter_mut().enumerate() {
-            container.save();
+            match container.get_container_details().data_source {
+                DataSource::Memory => {}
+                DataSource::File => container.save()
+            }
         }
     }
 }
