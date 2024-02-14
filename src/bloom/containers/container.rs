@@ -36,6 +36,15 @@ pub trait Container
     /// Returns construction info used to create this container.
     fn get_container_details(&mut self) -> &mut ContainerDetails;
 
+    /// Returns container fill percentage.
+    fn get_usage(&self) -> f32;
+
+    // Returns number of writes into the container.
+    fn get_num_writes(&self) -> u64;
+
+    // Sets number of writes into the container (initialized when container file is opened).
+    fn set_num_writes(&mut self, value: u64);
+
     /// Saves (overwrites) container into the file.
     fn save(&mut self) {
         let path = &self.get_container_details().path;
@@ -61,8 +70,11 @@ pub trait Container
         // Writing error rate.
         file.write_f64::<LittleEndian>(container_details.construction_details.error_rate).unwrap();
 
+        // Writing number of written items.
+        file.write_u64::<LittleEndian>(self.get_num_writes()).unwrap();
+
         // Aligning to 128 bytes, so structure may grow without affecting content.
-        for _ in 0 .. 99 {
+        for _ in 0 .. 91 {
             file.write_u8(0).unwrap();
         }
 
@@ -121,6 +133,9 @@ impl dyn Container {
         // Reading error rate.
         let error_rate = file.read_f64::<LittleEndian>().unwrap();
 
+        // Reading number of written items.
+        let num_writes = file.read_u64::<LittleEndian>().unwrap();
+
         let construction_details = ConstructionDetails {
             construction_type,
             size,
@@ -129,7 +144,7 @@ impl dyn Container {
         };
 
         // Aligning to 128 bytes, so structure may grow without affecting content.
-        for _ in 0 .. 99 {
+        for _ in 0 .. 91 {
             file.read_u8().unwrap();
         }
 
@@ -138,6 +153,8 @@ impl dyn Container {
             construction_details,
             data_source: DataSource::File
         });
+
+        container.set_num_writes(num_writes);
 
         container.load_content(&file);
 

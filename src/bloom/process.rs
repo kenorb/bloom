@@ -53,13 +53,19 @@ pub fn process(params: &mut Params) {
 /// Processes a single line.
 fn process_line(line: &String, params: &mut Params, curr_writable_container_idx: &mut usize, stdout_lock: &mut BufWriter<StdoutLock>) {
     // Whether line previously existed in any of the containers.
-    let mut had_value: bool;
+    let mut had_value: bool = false;
 
-    // Whether line was written into the currently writable container (via check_and_set()).
-    let mut _did_set: bool;
+    // -w [5 / 1000] [ 1000/1000 ] [10 / 1000]
+    //        idx
+    //        ^w
+
+    // Whether line was written into the currently writable container (via set() or check_and_set()).
+    let mut written: bool = false;
+
+    let mut was_full: bool = false;
 
     for (idx, ref mut container) in params.containers.iter_mut().enumerate() {
-        if params.write_mode && idx < *curr_writable_container_idx {
+        if params.write_mode && idx > *curr_writable_container_idx {
             // In write mode we only check for the containers up to the currently writable one. Other containers are
             // empty, so there is no sense in checking what's there.
             break;
@@ -69,13 +75,26 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
             // We can only insert to the currently writable container.
             if !container.is_full() {
                 // But only if it's not full!
-                had_value = container.check_and_set(&line);
+                // Note that in previous iteration we could have found the value, but it wasn't yet written, as
+                // container was full.
+                if had_value {
+                    // We finally insert the value into container.
+                    container.set(&line);
+
+                    written = true;
+                }
+                else {
+                    // Previous containers didn't have the value.
+                    had_value = container.check_and_set(&line);
+                }
                 // We're sure that if there were no value then it was written.
-                _did_set = true;
+                written = true;
             }
             else {
                 // If it's full then we fall back into normal check as we can't write into it.
                 had_value = container.check(&line);
+
+                was_full = true;
             }
         }
         else {
@@ -143,25 +162,26 @@ fn process_line(line: &String, params: &mut Params, curr_writable_container_idx:
         return;
     }
 
-    let last_container = &mut params.containers[*curr_writable_container_idx];
+    let curr_writable_container = &mut params.containers[*curr_writable_container_idx];
 
     if params.debug {
         eprintln!("Writing \"{line}\" into container #{}...", *curr_writable_container_idx);
     }
 
+    if params.write_mode && curr_writable_container.is_full() {
+        // If we end up here and current writable container is full then we're
+        // We will now use the next container.
+        if params.debug {
+            eprintln!("Not writing into container #{} as it is full.", *curr_writable_container_idx);
+        }
+        return;
+    }
+
     // Writing line into current bloom filter.
-    last_container.set(&line);
+    curr_writable_container.set(&line);
 
     if params.debug {
         eprintln!("Written.");
-    }
-
-    if last_container.is_full() {
-        // We will now use the next container.
-        if params.debug {
-            eprintln!("Container #{} is now full.", *curr_writable_container_idx);
-        }
-        *curr_writable_container_idx += 1;
     }
 }
 
@@ -179,6 +199,7 @@ fn debug_args(params: &mut Params) {
     }
 
     for (_i, container) in params.containers.iter_mut().enumerate() {
+        let container_usage = container.get_usage();
         let container_details = container.get_container_details();
 
         let kind_str = match container_details.data_source {
@@ -192,12 +213,13 @@ fn debug_args(params: &mut Params) {
             ConstructionType::XXHLimitAndSize => { "(xxhash) limit and error-rate" },
         };
 
-        eprintln!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}",
-                 container_details.path,
-                 type_str,
-                 container_details.construction_details.size,
-                 container_details.construction_details.error_rate,
-                 container_details.construction_details.limit
+        eprintln!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}, usage = {} %",
+                  container_details.path,
+                  type_str,
+                  container_details.construction_details.size,
+                  container_details.construction_details.error_rate,
+                  container_details.construction_details.limit,
+                  container_usage
         );
     }
     eprintln!();

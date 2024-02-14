@@ -52,6 +52,21 @@ impl Container for MemoryContainerBloom {
         &mut self.container_details
     }
 
+    /// Returns container fill percentage.
+    fn get_usage(&self) -> f32 {
+        100.0f32 / self.filter.bit_vec().len() as f32 * self.num_writes as f32
+    }
+
+    // Returns number of writes into the container.
+    fn get_num_writes(&self) -> u64 {
+        self.num_writes as u64
+    }
+
+    // Sets number of writes into the container (initialized when container file is opened).
+    fn set_num_writes(&mut self, value: u64) {
+        self.num_writes = value as usize
+    }
+
     /// Saves filter data content to the given, already opened for write file.
     fn save_content(&mut self, file: &mut File) {
         file.write_u32::<LittleEndian>(0xFFEEDDBB).unwrap();

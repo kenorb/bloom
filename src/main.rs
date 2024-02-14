@@ -356,12 +356,26 @@ fn main() {
 
     process(&mut params);
 
+    if params.debug {
+        eprintln!();
+        eprintln!("[ CONTAINERS STATUS ]");
+        for (_i, container) in params.containers.iter_mut().enumerate() {
+            let path = container.get_container_details().path.clone();
+            eprintln!("- {}: Fill: {} %", path, container.get_usage());
+        }
+        eprintln!();
+    }
+
     if params.write_mode {
         // Writing file containers.
         for (_i, container) in params.containers.iter_mut().enumerate() {
             match container.get_container_details().data_source {
                 DataSource::Memory => {}
                 DataSource::File => container.save()
+            }
+
+            if params.debug {
+                eprintln!("")
             }
         }
     }

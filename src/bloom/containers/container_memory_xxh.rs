@@ -62,6 +62,7 @@ impl Container for MemoryContainerXXH {
         let had_value = self.bitvec.get(base_index).unwrap();
         if !had_value {
             self.bitvec.set(base_index, true);
+            self.num_writes += 1;
         }
         return had_value;
     }
@@ -76,6 +77,22 @@ impl Container for MemoryContainerXXH {
         &mut self.container_details
     }
 
+    /// Returns container fill percentage.
+    fn get_usage(&self) -> f32 {
+        eprintln!("writes: {}", self.num_writes);
+        100.0f32 / self.bitvec.len() as f32 * self.num_writes as f32
+    }
+
+    // Returns number of writes into the container.
+    fn get_num_writes(&self) -> u64 {
+        self.num_writes as u64
+    }
+
+    // Sets number of writes into the container (initialized when container file is opened).
+    fn set_num_writes(&mut self, value: u64) {
+        self.num_writes = value as usize
+    }
+
     /// Saves filter data content to the given, already opened for write file.
     fn save_content(&mut self, file: &mut File) {
         eprintln!("Starting write");
@@ -87,11 +104,9 @@ impl Container for MemoryContainerXXH {
     /// Loads filter data content from the given, already opened file.
     fn load_content(&mut self, mut file: &File) {
         let construction_details = &self.get_container_details();
-
         let mut bytes = Vec::new();
-        bytes.reserve_exact(construction_details.construction_details.size * 8);
+        bytes.reserve_exact(construction_details.construction_details.size);
         file.read_to_end(&mut bytes).unwrap();
-
         self.bitvec = BitVec::from_bytes(&bytes);
     }
 }
