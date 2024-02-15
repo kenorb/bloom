@@ -36,11 +36,29 @@ pub trait Container
     /// Returns construction info used to create this container.
     fn get_container_details(&mut self) -> &mut ContainerDetails;
 
+    /// Returns container fill percentage.
+    fn get_usage(&self) -> f32;
+
+    /// Returns container writes percentage.
+    fn get_write_level(&self) -> f32 {
+        100.0f32 / self.get_num_max_writes() as f32 *  self.get_num_writes() as f32
+    }
+
+    // Returns number of writes into the container.
+    fn get_num_writes(&self) -> u64;
+
+    // Sets number of writes into the container (initialized when container file is opened).
+    fn set_num_writes(&mut self, value: u64);
+
+    // Returns maximum number of allowed writes into the container.
+    fn get_num_max_writes(&self) -> u64;
+
+    // Sets maximum number of allowed writes into the container (initialized when container file is opened).
+    fn set_num_max_writes(&mut self, value: u64);
+
     /// Saves (overwrites) container into the file.
     fn save(&mut self) {
         let path = &self.get_container_details().path;
-
-        eprintln!("Saving container into \"{path}\"...");
 
         let mut file = File::create(path).unwrap();
 
@@ -61,8 +79,14 @@ pub trait Container
         // Writing error rate.
         file.write_f64::<LittleEndian>(container_details.construction_details.error_rate).unwrap();
 
+        // Writing number of written items.
+        file.write_u64::<LittleEndian>(self.get_num_writes()).unwrap();
+
+        // Writing maximum number of written items.
+        file.write_u64::<LittleEndian>(self.get_num_max_writes()).unwrap();
+
         // Aligning to 128 bytes, so structure may grow without affecting content.
-        for _ in 0 .. 99 {
+        for _ in 0 .. 83 {
             file.write_u8(0).unwrap();
         }
 
@@ -74,7 +98,7 @@ pub trait Container
     fn save_content(&mut self, file: &mut File);
 
     /// Loads filter data content from the given, already opened file.
-    fn load_content(&mut self, file: &File);
+    fn load_content(&mut self, file: &mut File);
 }
 
 impl dyn Container {
@@ -94,9 +118,7 @@ impl dyn Container {
 
     // Creates container from existing file.
     pub fn from_file(path: &String) -> Box<dyn Container> {
-        eprintln!("Creating container from file \"{path}\"...");
-
-        let mut file = File::open(path).unwrap_or_else(|_| {
+        let file = &mut File::open(path).unwrap_or_else(|_| {
             eprintln!("Error: Can't open file \"{}\" for reading!", path);
             std::process::exit(1);
         });
@@ -121,6 +143,12 @@ impl dyn Container {
         // Reading error rate.
         let error_rate = file.read_f64::<LittleEndian>().unwrap();
 
+        // Reading number of written items.
+        let num_writes = file.read_u64::<LittleEndian>().unwrap();
+
+        // Reading maximum number of written items.
+        let num_max_writes = file.read_u64::<LittleEndian>().unwrap();
+
         let construction_details = ConstructionDetails {
             construction_type,
             size,
@@ -129,7 +157,7 @@ impl dyn Container {
         };
 
         // Aligning to 128 bytes, so structure may grow without affecting content.
-        for _ in 0 .. 99 {
+        for _ in 0 .. 83 {
             file.read_u8().unwrap();
         }
 
@@ -139,7 +167,11 @@ impl dyn Container {
             data_source: DataSource::File
         });
 
-        container.load_content(&file);
+        container.set_num_writes(num_writes);
+
+        container.set_num_max_writes(num_max_writes);
+
+        container.load_content(file);
 
         container
     }

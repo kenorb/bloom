@@ -1,5 +1,6 @@
 extern crate bit_set;
 extern crate bit_vec;
+extern crate bloomfilter;
 extern crate crc32fast;
 extern crate parse_size;
 extern crate memory_stats;
@@ -59,7 +60,8 @@ pub struct Params {
     write_mode: bool,
     containers: Vec<Box<dyn Container>>,
     silent: bool,
-    inverse: bool
+    inverse: bool,
+    debug_internal: bool
 }
 
 fn print_help() {
@@ -122,7 +124,8 @@ fn main() {
         write_mode: false,
         containers: Vec::new(),
         silent: false,
-        inverse: false
+        inverse: false,
+        debug_internal: false
     };
 
     // List of passed file paths.
@@ -275,6 +278,9 @@ fn main() {
             // Will output debug information about memory usage.
             "-dm" | "--debug-memory" => params.debug_memory = true,
 
+            // Will output internal debug information. It's a hidden parameter.
+            "-di" | "--debug-internal" => params.debug_internal = true,
+
             // Silent mode.
             "-s" | "--silent" => params.silent = true,
 
@@ -356,12 +362,26 @@ fn main() {
 
     process(&mut params);
 
+    if params.debug {
+        eprintln!();
+        eprintln!("[ CONTAINERS' STATUS ]");
+        for (_i, container) in params.containers.iter_mut().enumerate() {
+            let path = container.get_container_details().path.clone();
+            eprintln!("- \"{}\": binary fill: {} %, line fill: {} %", path, container.get_usage(), container.get_write_level());
+        }
+        eprintln!();
+    }
+
     if params.write_mode {
         // Writing file containers.
         for (_i, container) in params.containers.iter_mut().enumerate() {
             match container.get_container_details().data_source {
                 DataSource::Memory => {}
                 DataSource::File => container.save()
+            }
+
+            if params.debug {
+                eprintln!("")
             }
         }
     }
