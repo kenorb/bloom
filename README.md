@@ -12,6 +12,22 @@ calculate check sums, and insert them into a Bloom filter. Additionally, it
 supports the option to load and update existing Bloom filter files, set
 limits on the number of lines inserted, and more.
 
+## Build
+
+To build from source, clone this repository and run:
+
+    cargo build
+
+To build using optimized profile, run:
+
+    cargo build --profile optimized
+
+## Install
+
+To install, run:
+
+    cargo install --git https://github.com/kenorb/bloom.git
+
 ## Examples
 
 ```
