@@ -1,8 +1,7 @@
-extern crate bloomfilter;
-
 use std::fs::File;
-use byteorder::{LittleEndian, WriteBytesExt};
-use self::bloomfilter::Bloom;
+use std::io::{BufWriter, Write, Read};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use bloomfilter::Bloom;
 use bloom::containers::container::{Container};
 use ::{ContainerDetails};
 
@@ -39,7 +38,13 @@ impl Container for MemoryContainerBloom {
     /// Checks whether filter could have given value and if no, inserts the value. Returns true if value could have
     /// existed.
     fn check_and_set(&mut self, value: &String) -> bool {
-        return self.filter.check_and_set(value);
+        let had_value = self.filter.check_and_set(value);
+
+        if !had_value {
+            self.num_writes += 1;
+        }
+
+        had_value
     }
 
     /// Checks whether container is full, and we should not insert new values.
@@ -67,14 +72,55 @@ impl Container for MemoryContainerBloom {
         self.num_writes = value as usize
     }
 
+    // Returns maximum number of allowed writes into the container.
+    fn get_num_max_writes(&self) -> u64 {
+        self.max_writes as u64
+    }
+
+    // Sets maximum number of allowed writes into the container (initialized when container file is opened).
+    fn set_num_max_writes(&mut self, value: u64) {
+        self.max_writes = value as usize;
+    }
+
     /// Saves filter data content to the given, already opened for write file.
     fn save_content(&mut self, file: &mut File) {
-        file.write_u32::<LittleEndian>(0xFFEEDDBB).unwrap();
+        let mut buf_writer = BufWriter::with_capacity(10000000, file);
+
+        // Writing sip keys.
+        let sip_keys = self.filter.sip_keys();
+        let (sip_keys_0_0, sip_keys_0_1) = &sip_keys.get(0).unwrap();
+        let (sip_keys_1_0, sip_keys_1_1) = &sip_keys.get(1).unwrap();
+        buf_writer.write_u64::<LittleEndian>(*sip_keys_0_0).unwrap();
+        buf_writer.write_u64::<LittleEndian>(*sip_keys_0_1).unwrap();
+        buf_writer.write_u64::<LittleEndian>(*sip_keys_1_0).unwrap();
+        buf_writer.write_u64::<LittleEndian>(*sip_keys_1_1).unwrap();
+
+        // Writing bit vec.
+        buf_writer.write_all(&self.filter.bit_vec().to_bytes()).unwrap();
     }
 
     /// Loads filter data content from the given, already opened file.
-    fn load_content(&mut self, _file: &File) {
+    fn load_content(&mut self, file: &mut File) {
+        let construction_details = self.get_container_details();
 
+        // Reading sip keys.
+        let sip_keys_0_0 = file.read_u64::<LittleEndian>().unwrap();
+        let sip_keys_0_1 = file.read_u64::<LittleEndian>().unwrap();
+        let sip_keys_1_0 = file.read_u64::<LittleEndian>().unwrap();
+        let sip_keys_1_1 = file.read_u64::<LittleEndian>().unwrap();
+
+        let sip_keys: [(u64, u64); 2] = [(sip_keys_0_0, sip_keys_0_1), (sip_keys_1_0,sip_keys_1_1)];
+
+        // Reading bit vec.
+        let mut bytes = Vec::new();
+        bytes.reserve_exact(construction_details.construction_details.size);
+        file.read_to_end(&mut bytes).unwrap();
+
+        self.filter = Bloom::from_existing(
+            &bytes,
+            construction_details.construction_details.size as u64 * 8,
+            construction_details.construction_details.limit as u32,
+            sip_keys);
     }
 }
 

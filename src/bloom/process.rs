@@ -52,136 +52,132 @@ pub fn process(params: &mut Params) {
 
 /// Processes a single line.
 fn process_line(line: &String, params: &mut Params, curr_writable_container_idx: &mut usize, stdout_lock: &mut BufWriter<StdoutLock>) {
-    // Whether line previously existed in any of the containers.
-    let mut had_value: bool = false;
+    // Step 1: Iterating over containers and checking if value exists in each of them.
+    //         If value exists in container, we store (in write mode) the value in the first possible writable
+    //         container. In order to find possible container we just skip current container if it's full in a loop.
+    //         Special case is for container that is also the current writable container (after finding possible
+    //         writable container in a loop). In such case we do check_and_set() to speed up.
 
-    // -w [5 / 1000] [ 1000/1000 ] [10 / 1000]
-    //        idx
-    //        ^w
+    let mut could_write = params.write_mode;
+    let mut value_written = false;
+    let mut value_found = false;
 
-    // Whether line was written into the currently writable container (via set() or check_and_set()).
-    let mut written: bool = false;
-
-    let mut was_full: bool = false;
-
-    for (idx, ref mut container) in params.containers.iter_mut().enumerate() {
-        if params.write_mode && idx > *curr_writable_container_idx {
-            // In write mode we only check for the containers up to the currently writable one. Other containers are
-            // empty, so there is no sense in checking what's there.
-            break;
+    // 1. Switching to next writable container.
+    if params.write_mode {
+        while *curr_writable_container_idx < params.containers.len() && params.containers[*curr_writable_container_idx].is_full() {
+            // If current container is full then we advance current writable container index.
+            // Note that we could end up with an index out of range. That will mean that we couldn't write items at all.
+            if params.debug_internal {
+                eprintln!("> #{}: Container is full, we will check another.", *curr_writable_container_idx);
+            }
+            *curr_writable_container_idx += 1;
         }
 
-        if idx == *curr_writable_container_idx {
-            // We can only insert to the currently writable container.
-            if !container.is_full() {
-                // But only if it's not full!
-                // Note that in previous iteration we could have found the value, but it wasn't yet written, as
-                // container was full.
-                if had_value {
-                    // We finally insert the value into container.
-                    container.set(&line);
+        if *curr_writable_container_idx >= params.containers.len() {
+            // Current writable container index is out of range. That mean that there is no container that we can write
+            // to.
+            if params.debug_internal {
+                eprintln!("> All containers are full, writing disabled.");
+            }
+            could_write = false;
+        }
+        else {
+            if params.debug_internal {
+                eprintln!("> #{}: Container is not full and is ready to be written to.", *curr_writable_container_idx);
+            }
+        }
+    }
 
-                    written = true;
+    // 2. Iterating over containers in order to read and maybe write to the same container. If we end up with a matching
+    //    value in the container which isn't the writable one then we will write the value in step 3 (outside the loop).
+    for (idx, ref mut container) in params.containers.iter_mut().enumerate()
+    {
+        if could_write && idx == *curr_writable_container_idx {
+            // In write mode we could use check_and_set() if current writable container is the one we iterate over.
+            value_found = container.check_and_set(line);
+            // If value was found then it also was written.
+            value_written = value_found;
+
+            if value_found {
+                // We found the value and also wrote it into the container. We're advancing to the step 3 in which we
+                // will print the value. In step 3 we will not write the value as value_written is now true.
+                if params.debug_internal {
+                    eprintln!("> #{}: We can write and it's writable container. Value \"{}\" found and written. Advancing to step 3.", idx, line);
                 }
-                else {
-                    // Previous containers didn't have the value.
-                    had_value = container.check_and_set(&line);
-                }
-                // We're sure that if there were no value then it was written.
-                written = true;
+                break;
             }
             else {
-                // If it's full then we fall back into normal check as we can't write into it.
-                had_value = container.check(&line);
-
-                was_full = true;
+                // Value wasn't found nor written. Next containers will not be writable. We will just iterate to search
+                // for the value and then go to the step 3 in which we may write the value.
+                if params.debug_internal {
+                    eprintln!("> #{}: We can write and it's writable container. Value \"{}\" not found and not written. Continuing iteration.", idx, line);
+                }
+                continue;
             }
         }
         else {
-            // If container is not the currently writable one then we only check if value exists.
-            had_value = container.check(&line);
-        }
+            // We can't write, so we fall back to the check().
+            value_found = container.check(line);
 
-        if params.debug {
-            eprintln!("Input: \"{line}\". Checking container #{idx} - {}", if had_value { "String did exist" } else { "String did not exist" });
-        }
-
-        if params.inverse {
-            if had_value {
-                // Value did exist, outputting the line.
-                if params.debug {
-                    eprintln!("> Inverse matched (string already exist)");
+            if value_found {
+                // If value was found then we mark it as already written to not write it again. We can also advance to
+                // the step 3.
+                if params.debug_internal {
+                    eprintln!("> #{}: Value \"{}\" found so we treat is as already written. Advancing to step 3.", idx, line);
                 }
-
-                if !params.silent {
-                    stdout_lock.write(line.as_bytes()).unwrap();
-                    stdout_lock.write(b"\n").unwrap();
-                }
+                value_written = true;
+                break;
             }
             else {
-                if params.debug {
-                    eprintln!("> Inverse unmatched (string didn't exist)");
+                // Value not found. Continuing iteration.
+                if params.debug_internal {
+                    eprintln!("> #{}: We can't write. Value \"{}\" not found. Continuing iteration.", idx, line);
                 }
+                continue;
             }
-            // If value didn't exist then it was saved, and we can check another line.
-            return;
-        }
-        else if !params.inverse && had_value {
-            // Potential match found. We're done.
-            return;
         }
     }
 
-    if *curr_writable_container_idx >= params.containers.len() {
-        // No more containers to write to. Outputting the line.
-        if params.debug {
-            eprintln!("> Unmatched (bloom size overflow): \"{}\".", line);
-        }
+    // 3. Here we could have three variables which determines what we'll do:
+    //    - could_write - If false then we're sure that it's read mode or there's no writable containers.
+    //                    If true then we're sure that it's write mode and current writable container is not full and
+    //                    is ready to be written to.
+    //    - value_found - Whether given line was found in any of the container.
+    //    - value_written - Whether given line was written to any of the writable containers.
+    //
+    if value_found {
+        if could_write && !value_written {
+            // Value was found in some container, but was not yet written.
+            // Note that could_write mean that current writable container is not full and is ready to be written to.
+            let curr_writable_container = &mut params.containers[*curr_writable_container_idx];
 
+            if params.debug_internal {
+                eprintln!("> #{}: Value \"{}\" found and written in step 3.", *curr_writable_container_idx, line);
+            }
+
+            // We're node. Value was found and is now written.
+            curr_writable_container.set(line);
+
+            // Marking value as written, so we can do some additional logic later.
+            // value_written = true; // Uncomment this if used.
+        }
+    }
+
+    // 4. Now it's time to print the value. We consider inverse mode.
+    if (!value_found && !params.inverse) || (value_found && params.inverse) {
         if !params.silent {
+            // Printing the line.
             stdout_lock.write(line.as_bytes()).unwrap();
             stdout_lock.write(b"\n").unwrap();
+            if params.debug_internal {
+                eprintln!("> Value written: {}", line);
+            }
         }
-        return;
     }
-
-    // No match found in all containers.
-    if params.debug {
-        eprintln!("> Unmatched: \"{}\".", line);
-    }
-
-    if !params.silent {
-        stdout_lock.write(line.as_bytes()).unwrap();
-        stdout_lock.write(b"\n").unwrap();
-    }
-
-    if !params.write_mode {
-        if params.debug {
-            eprintln!("Not writing \"{line}\" into container #{} as -w was not passed.", *curr_writable_container_idx);
+    else {
+        if params.debug_internal {
+            eprintln!("> Value unmatched: {}", line);
         }
-        return;
-    }
-
-    let curr_writable_container = &mut params.containers[*curr_writable_container_idx];
-
-    if params.debug {
-        eprintln!("Writing \"{line}\" into container #{}...", *curr_writable_container_idx);
-    }
-
-    if params.write_mode && curr_writable_container.is_full() {
-        // If we end up here and current writable container is full then we're
-        // We will now use the next container.
-        if params.debug {
-            eprintln!("Not writing into container #{} as it is full.", *curr_writable_container_idx);
-        }
-        return;
-    }
-
-    // Writing line into current bloom filter.
-    curr_writable_container.set(&line);
-
-    if params.debug {
-        eprintln!("Written.");
     }
 }
 
@@ -200,6 +196,7 @@ fn debug_args(params: &mut Params) {
 
     for (_i, container) in params.containers.iter_mut().enumerate() {
         let container_usage = container.get_usage();
+        let container_write_level = container.get_write_level();
         let container_details = container.get_container_details();
 
         let kind_str = match container_details.data_source {
@@ -213,13 +210,14 @@ fn debug_args(params: &mut Params) {
             ConstructionType::XXHLimitAndSize => { "(xxhash) limit and error-rate" },
         };
 
-        eprintln!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}, usage = {} %",
+        eprintln!(" - Container {kind_str} \"{}\" with type = {}, size = {}, error rate = {}, limit = {}, binary fill = {} %, line fill = {} %",
                   container_details.path,
                   type_str,
                   container_details.construction_details.size,
                   container_details.construction_details.error_rate,
                   container_details.construction_details.limit,
-                  container_usage
+                  container_usage,
+                  container_write_level
         );
     }
     eprintln!();

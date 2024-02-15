@@ -1,6 +1,5 @@
 use std::fs::File;
 use bit_vec::BitVec;
-
 use std::io::{Write, Read, BufWriter};
 
 
@@ -79,7 +78,6 @@ impl Container for MemoryContainerXXH {
 
     /// Returns container fill percentage.
     fn get_usage(&self) -> f32 {
-        eprintln!("writes: {}", self.num_writes);
         100.0f32 / self.bitvec.len() as f32 * self.num_writes as f32
     }
 
@@ -93,16 +91,24 @@ impl Container for MemoryContainerXXH {
         self.num_writes = value as usize
     }
 
+    // Returns maximum number of allowed writes into the container.
+    fn get_num_max_writes(&self) -> u64 {
+        self.max_writes as u64
+    }
+
+    // Sets maximum number of allowed writes into the container (initialized when container file is opened).
+    fn set_num_max_writes(&mut self, value: u64) {
+        self.max_writes = value as usize;
+    }
+
     /// Saves filter data content to the given, already opened for write file.
     fn save_content(&mut self, file: &mut File) {
-        eprintln!("Starting write");
         let mut buf_writer = BufWriter::with_capacity(10000000, file);
         buf_writer.write_all(&self.bitvec.to_bytes()).unwrap();
-        eprintln!("Finished write");
     }
 
     /// Loads filter data content from the given, already opened file.
-    fn load_content(&mut self, mut file: &File) {
+    fn load_content(&mut self, file: &mut File) {
         let construction_details = &self.get_container_details();
         let mut bytes = Vec::new();
         bytes.reserve_exact(construction_details.construction_details.size);
