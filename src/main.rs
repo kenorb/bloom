@@ -43,9 +43,9 @@ enum ConstructionType {
 #[derive(Copy, Clone)]
 struct ConstructionDetails {
     construction_type: ConstructionType,
-    limit: usize,
+    limit: u64,
     error_rate: f64,
-    size: usize,
+    size: u64,
 }
 
 pub struct ContainerDetails {
@@ -174,12 +174,12 @@ fn main() {
                 let limit = parse_size(pair[0]).unwrap_or_else(|_| {
                     eprintln!("Error: Could not parse limit passed in -xls or --xxh-limit-and-size parameter.");
                     std::process::exit(1);
-                }) as usize;
+                });
 
                 let size = parse_size(pair[1]).unwrap_or_else(|_| {
                     eprintln!("Error: Could not parse filter size passed in -xls or --xxh-limit-and-size parameter.");
                     std::process::exit(1);
-                }) as usize;
+                });
 
                 constructions_details.push(ConstructionDetails {
                     construction_type: ConstructionType::XXHLimitAndSize,
@@ -208,12 +208,12 @@ fn main() {
                 let limit = parse_size(pair[0]).unwrap_or_else(|_| {
                     eprintln!("Error: Could not parse limit passed in -xls or --xxh-limit-and-size parameter.");
                     std::process::exit(1);
-                }) as usize;
+                });
 
                 let size = parse_size(pair[1]).unwrap_or_else(|_| {
                     eprintln!("Error: Could not parse filter size passed in -bls or --bloom-limit-and-size parameter.");
                     std::process::exit(1);
-                }) as usize;
+                });
 
                 constructions_details.push(ConstructionDetails {
                     construction_type: ConstructionType::BloomLinesAndSize,
@@ -242,7 +242,7 @@ fn main() {
                 let limit = parse_size(pair[0]).unwrap_or_else(|_| {
                     eprintln!("Error: Could not parse limit passed in -xls or --xxh-limit-and-size parameter.");
                     std::process::exit(1);
-                }) as usize;
+                });
 
                 let error_rate: f64 = pair[1]
                     .parse()
@@ -321,9 +321,9 @@ fn main() {
             params.containers.push(<dyn Container>::from_details(ContainerDetails {
                 path: if file_paths.is_empty()  { format!("memory.{idx}.out") } else { file_paths[idx].to_string() },
                 construction_details: ConstructionDetails {
-                    size: parse_size("1Gb").unwrap() as usize,
+                    size: parse_size("1Gb").unwrap(),
                     error_rate: 0.0,
-                    limit: parse_size("1M").unwrap() as usize,
+                    limit: parse_size("1M").unwrap(),
                     construction_type: ConstructionType::XXHLimitAndSize
                 },
                 data_source: if file_paths.is_empty() { DataSource::Memory } else { DataSource::File },

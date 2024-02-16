@@ -135,10 +135,10 @@ impl dyn Container {
         let construction_type = ConstructionType::try_from(file.read_u8().unwrap()).unwrap();
 
         // Reading size.
-        let size = file.read_u64::<LittleEndian>().unwrap() as usize;
+        let size = file.read_u64::<LittleEndian>().unwrap();
 
         // Reading limit.
-        let limit = file.read_u64::<LittleEndian>().unwrap() as usize;
+        let limit = file.read_u64::<LittleEndian>().unwrap();
 
         // Reading error rate.
         let error_rate = file.read_f64::<LittleEndian>().unwrap();

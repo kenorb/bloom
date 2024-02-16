@@ -8,8 +8,8 @@ use ::{ContainerDetails};
 pub(crate) struct MemoryContainerBloom {
     container_details: ContainerDetails,
     is_acquired: bool,
-    num_writes: usize,
-    max_writes: usize,
+    num_writes: u64,
+    max_writes: u64,
     filter: Bloom<String>,
 }
 
@@ -69,7 +69,7 @@ impl Container for MemoryContainerBloom {
 
     // Sets number of writes into the container (initialized when container file is opened).
     fn set_num_writes(&mut self, value: u64) {
-        self.num_writes = value as usize
+        self.num_writes = value;
     }
 
     // Returns maximum number of allowed writes into the container.
@@ -79,7 +79,7 @@ impl Container for MemoryContainerBloom {
 
     // Sets maximum number of allowed writes into the container (initialized when container file is opened).
     fn set_num_max_writes(&mut self, value: u64) {
-        self.max_writes = value as usize;
+        self.max_writes = value;
     }
 
     /// Saves filter data content to the given, already opened for write file.
@@ -113,7 +113,7 @@ impl Container for MemoryContainerBloom {
 
         // Reading bit vec.
         let mut bytes = Vec::new();
-        bytes.reserve_exact(construction_details.construction_details.size);
+        bytes.reserve_exact(construction_details.construction_details.size as usize);
         file.read_to_end(&mut bytes).unwrap();
 
         self.filter = Bloom::from_existing(
@@ -130,7 +130,7 @@ impl MemoryContainerBloom {
             is_acquired: false,
             num_writes: 0,
             max_writes: container_details.construction_details.limit,
-            filter: Bloom::new_for_fp_rate(container_details.construction_details.limit, container_details.construction_details.error_rate),
+            filter: Bloom::new_for_fp_rate(container_details.construction_details.limit as usize, container_details.construction_details.error_rate),
             container_details,
 
         }
@@ -140,7 +140,7 @@ impl MemoryContainerBloom {
             is_acquired: false,
             num_writes: 0,
             max_writes: container_details.construction_details.limit,
-            filter: Bloom::new(container_details.construction_details.size, container_details.construction_details.limit),
+            filter: Bloom::new(container_details.construction_details.size as usize, container_details.construction_details.limit as usize),
             container_details,
         }
     }
