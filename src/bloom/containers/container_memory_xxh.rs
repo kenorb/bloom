@@ -1,9 +1,6 @@
 use std::fs::File;
 use bit_vec::BitVec;
 use std::io::{Write, Read, BufWriter};
-use crc32fast::hash;
-
-
 use bloom::containers::container::{Container};
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -11,13 +8,14 @@ use ::{ContainerDetails};
 
 pub(crate) struct MemoryContainerXXH {
     container_details: ContainerDetails,
-    is_acquired: bool,
-    num_writes: u64,
-    max_writes: u64,
-    bit_vec: BitVec,
-    key_bits: u8,
-    slot_bits: u8,
-    num_slots: u64
+    is_acquired: bool, // Whether container is in use.
+    num_writes: u64, // Number of written keys/values.
+    max_writes: u64, // Maximum number of added keys/values.
+    bit_vec: BitVec, // Vector of bits used to store keys/values.
+    key_bits: u8, // Number of bits used for each key in the slot.
+    slot_bits: u8, // Total number of bits used for each slot.
+    num_slots: u64, // Total number of slots in the vector of bits.
+    num_tries: u64 // Maximum number of lookups when adding/retrieving keys/values.
 }
 
 /// Performs input value scaling.
@@ -25,67 +23,115 @@ fn remap(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f6
     return out_min + (value - in_min) * (out_max - out_min) / (in_max - in_min);
 }
 
-fn _calc_index_naive(container: &MemoryContainerXXH, hash: u64) -> usize {
-    let size = container.bit_vec.len();
-    return remap(hash as f64, 0f64, u64::MAX as f64, 0f64, (size - 1) as f64) as usize;
-}
-
 /// Calculates index of the slot where we can insert key which is a part of given hash.
 fn calc_slot_index(container: &MemoryContainerXXH, hash: u64) -> u64 {
-    let size = container.bit_vec.len();
-    remap(hash as f64, 0f64, u64::MAX as f64, 0f64, (container.num_slots - 1) as f64) as u64
+    remap(hash as f64, 0f64, u64::MAX as f64, 0f64, (container.num_slots - 1) as f64) as u64 % container.num_slots
 }
 
 /// Returns u32 made from bit_vec bits of given index range. Note that both indices are inclusive.
-fn get_bit_vec_slice(container: &mut MemoryContainerXXH, slot_bit_from: u64, slot_bit_to: u64) -> u32 {
-    let slot_key_bits = &container.bit_vec[slot_bit_from..slot_bit_to + 1];
-
-    // Getting value that the slot holds.
-    let mut bits_value = 0u32;
-    for &bit in slot_key_bits {
-        bits_value = (bits_value << 1) | bit;
+fn get_bit_vec_slice(container: &MemoryContainerXXH, slot_bit_from: u64, slot_bit_to: u64) -> u32 {
+    let mut result: u32 = 0;
+    for i in 0 .. slot_bit_to - slot_bit_from + 1 {
+        let bit_value = container.bit_vec.get((slot_bit_from + i) as usize).unwrap();
+        if bit_value {
+            result |= 1 << i;
+        }
     }
+    result
+}
 
-    bits_value
+/// Writes key bits into container. Note that both indices are inclusive.
+fn set_bit_vec_slice(container: &mut MemoryContainerXXH, slot_bit_from: u64, slot_bit_to: u64, key: u32) {
+    for i in 0 .. slot_bit_to - slot_bit_from + 1 {
+        let bit_value = if key & (1 << i) != 0 { true } else { false };
+        container.bit_vec.set((slot_bit_from + i) as usize, bit_value);
+    }
+}
+
+/// Extracts key_bits bits from the hash.
+fn get_hash_key_value(container: &MemoryContainerXXH, hash: u64) -> u32 {
+    (hash & ((1 << container.key_bits) - 1)) as u32
+}
+
+/// Writes key in the given slot index. Marks slot as occupied.
+fn write_key(container: &mut MemoryContainerXXH, mut slot_idx: u64, key: u32) {
+    slot_idx = slot_idx % container.num_slots;
+    // Marking slot as occupied.
+    let slot_occupied_bit = slot_idx * container.slot_bits as u64;
+    container.bit_vec.set(slot_occupied_bit as usize, true);
+    // Writing key into slot.
+    let slot_key_bit_from = (slot_idx * container.slot_bits as u64) + 1;
+    let slot_key_bit_to = slot_key_bit_from + container.key_bits as u64 - 1; // Inclusive end index.
+    set_bit_vec_slice(container, slot_key_bit_from, slot_key_bit_to, key);
+    container.num_writes += 1
+}
+
+/// Reads key in the given slot index.
+fn read_key(container: &MemoryContainerXXH, mut slot_idx: u64) -> u32 {
+    slot_idx = slot_idx % container.num_slots;
+    // Writing key from slot.
+    let slot_key_bit_from = (slot_idx * container.slot_bits as u64) + 1;
+    let slot_key_bit_to = slot_key_bit_from + container.key_bits as u64 - 1; // Inclusive end index.
+    get_bit_vec_slice(container, slot_key_bit_from, slot_key_bit_to)
+}
+
+/// Checks whether slot is in use.
+fn get_slot_in_use(container: &MemoryContainerXXH, mut slot_idx: u64) -> bool {
+    slot_idx = slot_idx % container.num_slots;
+    // Reading first bit of the slot which indicates whether slot is in use.
+    container.bit_vec.get((slot_idx * container.slot_bits as u64) as usize).unwrap()
 }
 
 /// Tries to insert part of the hash in the first free slot starting from the specified slot index.
-fn insert_key(container: &mut MemoryContainerXXH, mut slot_idx: u64, hash: u64) -> bool {
-    if container.is_full() {
+/// Returns true if key was found and thus doesn't need to be inserted.
+fn insert_key(container: &mut MemoryContainerXXH, slot_idx: u64, hash: u64, num_tries: u64) -> bool {
+    // Extracting key_bits bits from the hash.
+    let hash_key_value = get_hash_key_value(container, hash);
+
+    // We only search in num_tries consecutive slots.
+    for i in 0 .. num_tries {
+        // First slot's bit is whether slot is occupied.
+        if get_slot_in_use(container, slot_idx + i) {
+            // Slot is in use, maybe it's the one we want to write?
+            if read_key(container, slot_idx + i) == hash_key_value {
+                // Key already found so returning true.
+                return true;
+            }
+            // Slot in use, but key wasn't found, continuing iteration until we find free slot.
+            continue;
+        }
+        // Free slot found, writing key and marking as occupied.
+        write_key(container, slot_idx + i, hash_key_value);
+        // Key wasn't found so returning false.
         return false;
     }
 
-    // Extracting key_bits bits from the hash.
-    let hash_key_value = hash & ((1 << container.key_bits) - 1);
-
-    // We only search in 10 consecutive slots.
-    for i in 0 .. 10 {
-        let mut slot_bit_from = (slot_idx + i) * container.slot_bits;
-
-        if (container.bit_vec.get(slot_bit_from as usize)) {
-            // Slot is in use, skipping.
-            continue;
-        }
-
-        let slot_bit_to = (slot_idx + 1) * container.slot_bits + container.slot_bits;
-        let slot_key_value = get_bit_vec_slice(container, slot_bit_from, slot_bit_to - 1);
-
-        if (slot_key_value == hash_key_value) {
-            // Found hash in the slot!
-            return
-        }
-    }
-
+    // No free slot found nor matching key in consecutive slots, returning false.
     false
 }
 
 /// Tries to find key that matches a part of given hash starting from the given slot index.
-fn find_value(container: &MemoryContainerXXH, mut slot_idx: u64, hash: u64, ref mut free_index: u64) -> bool {
-    loop {
-        return false
+/// We search for num_tries consecutive keys and then just return true if there was no match.
+fn find_key(container: &MemoryContainerXXH, slot_idx: u64, hash: u64, num_tries: u64) -> bool {
+    // Extracting key_bits bits from the hash.
+    let hash_key_value = get_hash_key_value(container, hash);
+
+    // We only search in num_tries consecutive slots.
+    for i in 0 .. num_tries {
+        if !get_slot_in_use(container, slot_idx + i) {
+            // Slot not in use, so we're sure that there were no matching key.
+            return false;
+        }
+
+        // We have occupied slot, checking if hash's key matches.
+        if read_key(container, slot_idx + i) == hash_key_value {
+            // Matching key. Assuming hash was found.
+            return true;
+        }
     }
 
-    false
+    // All slots were occupied, but we didn't find the matching one. Assuming matching key exists.
+    true
 }
 
 impl Container for MemoryContainerXXH {
@@ -103,7 +149,7 @@ impl Container for MemoryContainerXXH {
     fn set(&mut self, value: &String) {
         let hash = xxh3_64(value.as_bytes());
         let slot_idx = calc_slot_index(self, hash);
-        insert_key(self, slot_idx, hash);
+        insert_key(self, slot_idx, hash, self.num_tries);
         self.num_writes += 1;
     }
 
@@ -113,8 +159,7 @@ impl Container for MemoryContainerXXH {
         let hash = xxh3_64(value.as_bytes());
         let slot_idx = calc_slot_index(self, hash);
         // We won't use the free_index in read mode.
-        let _free_index: u64 = 0;
-        return find_value(self, slot_idx, hash, _free_index);
+        return find_key(self, slot_idx, hash, self.num_tries);
     }
 
     /// Checks whether filter could have given value and if no, inserts the value. Returns true if value could have
@@ -122,15 +167,8 @@ impl Container for MemoryContainerXXH {
     fn check_and_set(&mut self, value: &String) -> bool {
         let hash = xxh3_64(value.as_bytes());
         let slot_idx = calc_slot_index(self, hash);
-        // Free index is the index find_value() will return if it won't find the value. We could use this index to write
-        // the key and thus occupy the slot.
-        let free_slot_idx: u64 = 0;
-        let had_value = find_value(self, slot_idx, hash, free_slot_idx);
-        if !had_value {
-            insert_key(self, slot_idx, hash);
-            self.num_writes += 1;
-        }
-        return had_value;
+        // insert_key() will return whether key was found while trying to insert it.
+        return insert_key(self, slot_idx, hash, self.num_tries);
     }
 
     /// Checks whether container is full, and we should not insert new values.
@@ -185,8 +223,9 @@ impl Container for MemoryContainerXXH {
 }
 
 impl MemoryContainerXXH {
+    /// Creates instance of bloom filter from given container details.
     pub(crate) fn new_limit_and_size(container_details: ContainerDetails) -> Self {
-        let key_bits: u8 = 4;
+        let key_bits: u8 = 20;
         let slot_internal_bits: u8 = 1; // We will only store boolean indicating whether slot is occupied.
         Self {
             is_acquired: false,
@@ -196,6 +235,7 @@ impl MemoryContainerXXH {
             key_bits,
             slot_bits: slot_internal_bits + key_bits,
             num_slots: (container_details.construction_details.size * 8) / (slot_internal_bits as u64 + key_bits as u64),
+            num_tries: 4,
             container_details,
         }
     }

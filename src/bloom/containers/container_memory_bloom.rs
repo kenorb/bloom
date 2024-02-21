@@ -7,10 +7,10 @@ use ::{ContainerDetails};
 
 pub(crate) struct MemoryContainerBloom {
     container_details: ContainerDetails,
-    is_acquired: bool,
-    num_writes: u64,
-    max_writes: u64,
-    filter: Bloom<String>,
+    is_acquired: bool, // Whether container is in use.
+    num_writes: u64, // Number of written keys/values.
+    max_writes: u64, // Maximum number of added keys/values.
+    filter: Bloom<String>, // Bloom filter module.
 }
 
 impl Container for MemoryContainerBloom {
@@ -62,22 +62,22 @@ impl Container for MemoryContainerBloom {
         100.0f32 / self.filter.bit_vec().len() as f32 * self.num_writes as f32
     }
 
-    // Returns number of writes into the container.
+    /// Returns number of writes into the container.
     fn get_num_writes(&self) -> u64 {
         self.num_writes as u64
     }
 
-    // Sets number of writes into the container (initialized when container file is opened).
+    /// Sets number of writes into the container (initialized when container file is opened).
     fn set_num_writes(&mut self, value: u64) {
         self.num_writes = value;
     }
 
-    // Returns maximum number of allowed writes into the container.
+    /// Returns maximum number of allowed writes into the container.
     fn get_num_max_writes(&self) -> u64 {
         self.max_writes as u64
     }
 
-    // Sets maximum number of allowed writes into the container (initialized when container file is opened).
+    /// Sets maximum number of allowed writes into the container (initialized when container file is opened).
     fn set_num_max_writes(&mut self, value: u64) {
         self.max_writes = value;
     }
@@ -125,6 +125,7 @@ impl Container for MemoryContainerBloom {
 }
 
 impl MemoryContainerBloom {
+    /// Creates instance of bloom filter from given container details.
     pub(crate) fn new_limit_and_error_rate(container_details: ContainerDetails) -> Self {
         Self {
             is_acquired: false,
@@ -135,6 +136,8 @@ impl MemoryContainerBloom {
 
         }
     }
+
+    /// Creates instance of bloom filter from given container details.
     pub(crate) fn new_limit_and_size(container_details: ContainerDetails) -> Self {
         Self {
             is_acquired: false,
