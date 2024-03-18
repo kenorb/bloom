@@ -28,13 +28,22 @@ pub fn process(params: &mut Params) {
     const BUFFER_CAPACITY: usize = 64 * 1024;
     let stdout = io::stdout();
     let handle = stdout.lock();
+    let mut line_idx = 0;
 
     {
         let mut stdout_lock = io::BufWriter::with_capacity(BUFFER_CAPACITY, handle);
 
         for line in stdin().lock().lines() {
+            line_idx += 1;
             // Processing one line using current container index.
-            process_line(&line.unwrap(), params, &mut curr_container_idx, &mut stdout_lock);
+            let line = match line {
+                Ok(line) => line,
+                Err(e) => {
+                    eprintln!("Warning: Invalid data in line {}, skipping. Details: {}.", line_idx, e);
+                    continue;
+                }
+            };
+            process_line(&line, params, &mut curr_container_idx, &mut stdout_lock);
         }
     }
 
