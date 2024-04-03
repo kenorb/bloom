@@ -321,9 +321,9 @@ fn main() {
             params.containers.push(<dyn Container>::from_details(ContainerDetails {
                 path: if file_paths.is_empty()  { format!("memory.{idx}.out") } else { file_paths[idx].to_string() },
                 construction_details: ConstructionDetails {
-                    size: parse_size("1Gb").unwrap(),
+                    size: parse_size("2Gb").unwrap(),
                     error_rate: 0.0,
-                    limit: parse_size("1M").unwrap(),
+                    limit: parse_size("200M").unwrap(),
                     construction_type: ConstructionType::XXHLimitAndSize
                 },
                 data_source: if file_paths.is_empty() { DataSource::Memory } else { DataSource::File },
