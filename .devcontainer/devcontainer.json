@@ -23,6 +23,10 @@
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": "apt-get update && apt-get install -y vim",
 	"features": {
+		"ghcr.io/devcontainers/features/python:1": {
+			"installPackages": ["pre-commit"]
+		},
+		"ghcr.io/devcontainers-extra/features/pipx-package:1": {},
 		"ghcr.io/devcontainers/features/rust:1": {}
 		//
 	},
