@@ -1,12 +1,8 @@
-use std::io;
-use std::io::{BufRead, BufWriter, stdin, StdoutLock, Write};
-
+use std::io::{self, BufRead, BufReader, BufWriter, stdin, StdoutLock, Write};
 use memory_stats::memory_stats;
-use ::{Params};
-use ::{DataSource};
-
-use ConstructionType;
-
+use crate::{Params};
+use crate::{DataSource};
+use crate::ConstructionType;
 
 /// Performs Bloom filter tasks.
 pub fn process(params: &mut Params) {
@@ -28,22 +24,41 @@ pub fn process(params: &mut Params) {
     const BUFFER_CAPACITY: usize = 64 * 1024;
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut line_idx = 0;
+    let mut line_idx: i64 = 0;
 
     {
-        let mut stdout_lock = io::BufWriter::with_capacity(BUFFER_CAPACITY, handle);
+        let mut stdout_lock = BufWriter::with_capacity(BUFFER_CAPACITY, handle);
+        let stdin = stdin().lock();
+        let mut reader = BufReader::new(stdin);
+        let mut buf = Vec::new();
 
-        for line in stdin().lock().lines() {
-            line_idx += 1;
-            // Processing one line using current container index.
-            let line = match line {
-                Ok(line) => line,
+        loop {
+            buf.clear();
+            let _bytes_read = match reader.read_until(b'\n', &mut buf) {
+                Ok(0) => break, // EOF
+                Ok(n) => n,
                 Err(e) => {
-                    eprintln!("Warning: Invalid data in line {}, skipping. Details: {}.", line_idx, e);
+                    eprintln!("Error reading line {}: {}", line_idx, e);
                     continue;
                 }
             };
-            process_line(&line, params, &mut curr_container_idx, &mut stdout_lock);
+
+            line_idx += 1;
+
+            // Remove trailing newline if present
+            if buf.last() == Some(&b'\n') {
+                buf.pop();
+            }
+
+            // Create a String if valid UTF-8, otherwise use raw bytes
+            match String::from_utf8(buf.clone()) {
+                Ok(line) => process_line(&line, params, &mut curr_container_idx, &mut stdout_lock),
+                Err(_) => {
+                    // Handle invalid UTF-8 by using raw bytes
+                    stdout_lock.write_all(&buf).unwrap();
+                    stdout_lock.write_all(b"\n").unwrap();
+                }
+            }
         }
     }
 

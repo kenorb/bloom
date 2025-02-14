@@ -30,20 +30,18 @@ To install, run:
 
 ## Examples
 
-```
-# Filters out duplicated lines.
-$ (seq 10; seq 10) | bloom | wc -l
-10
-# Prints lines only when present in bloom filter.
-$ (seq 10; seq 10) | bloom -v | wc -l
-10
-# Store maximum 9 lines.
-$ seq 10 | bloom -l 9 | wc -l
-10
-# Writes bloom filter into the file, then use it again to filter out lines.
-$ seq 10 | bloom -f 10.blf -w; seq 10 | bloom -f 10.blf | wc -l
-0
-```
+    # Filters out duplicated lines.
+    $ (seq 10; seq 10) | bloom | wc -l
+    10
+    # Prints lines only when present in bloom filter.
+    $ (seq 10; seq 10) | bloom -v | wc -l
+    10
+    # Store maximum 9 lines.
+    $ seq 10 | bloom -l 9 | wc -l
+    10
+    # Writes bloom filter into the file, then use it again to filter out lines.
+    $ seq 10 | bloom -f 10.blf -w; seq 10 | bloom -f 10.blf | wc -l
+    0
 
 <!-- Named links -->
 
