@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write, Read};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use bloomfilter::Bloom;
-use bloom::containers::container::{Container};
-use ::{ContainerDetails};
+use crate::bloom::containers::container::Container;
+use crate::ContainerDetails;
 
 pub(crate) struct MemoryContainerBloom {
     container_details: ContainerDetails,

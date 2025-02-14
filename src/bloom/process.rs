@@ -1,10 +1,8 @@
 use std::io::{self, BufRead, BufReader, BufWriter, stdin, StdoutLock, Write};
-
 use memory_stats::memory_stats;
-use ::{Params};
-use ::{DataSource};
-
-use ConstructionType;
+use crate::{Params};
+use crate::{DataSource};
+use crate::ConstructionType;
 
 /// Performs Bloom filter tasks.
 pub fn process(params: &mut Params) {

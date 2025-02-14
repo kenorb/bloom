@@ -1,10 +1,10 @@
 use std::fs::File;
 use bit_vec::BitVec;
 use std::io::{Write, Read, BufWriter};
-use bloom::containers::container::{Container};
+use crate::bloom::containers::container::Container;
 use xxhash_rust::xxh3::xxh3_64;
 
-use ::{ContainerDetails};
+use crate::ContainerDetails;
 
 pub(crate) struct MemoryContainerXXH {
     container_details: ContainerDetails,

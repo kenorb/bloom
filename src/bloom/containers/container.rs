@@ -1,13 +1,12 @@
 use std::fs::File;
-
+use std::convert::TryFrom;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use byteorder::LittleEndian;
-use ::{ConstructionDetails, ConstructionType};
 
-use std::convert::TryFrom;
-use bloom::containers::container_memory_bloom::MemoryContainerBloom;
-use bloom::containers::container_memory_xxh::MemoryContainerXXH;
-use ::{ContainerDetails, DataSource};
+use crate::{ConstructionDetails, ConstructionType};
+use crate::{ContainerDetails, DataSource};
+use crate::bloom::containers::container_memory_bloom::MemoryContainerBloom;
+use crate::bloom::containers::container_memory_xxh::MemoryContainerXXH;
 
 /// Magic value used as first four bytes of container files.
 const MAGIC: u32 = 0xB1008811;
@@ -263,10 +262,10 @@ mod tests {
         };
 
         let test_value = String::from("test");
-        
+
         // First check should return false and set the value
         assert!(!container.check_and_set(&test_value));
-        
+
         // Second check should return true as value exists
         assert!(container.check_and_set(&test_value));
     }
