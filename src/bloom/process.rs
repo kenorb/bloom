@@ -24,7 +24,7 @@ pub fn process(params: &mut Params) {
     const BUFFER_CAPACITY: usize = 64 * 1024;
     let stdout = io::stdout();
     let handle = stdout.lock();
-    let mut line_idx = 0;
+    let mut line_idx: i64 = 0;
 
     {
         let mut stdout_lock = BufWriter::with_capacity(BUFFER_CAPACITY, handle);
