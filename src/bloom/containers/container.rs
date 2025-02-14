@@ -179,6 +179,98 @@ impl dyn Container {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    // Mock implementation for testing
+    struct MockContainer {
+        acquired: bool,
+        value: String,
+    }
+
+    impl Container for MockContainer {
+        fn acquire(&mut self) {
+            self.acquired = true;
+        }
+
+        fn release(&mut self) {
+            self.acquired = false;
+        }
+
+        fn set(&mut self, value: &String) {
+            self.value = value.clone();
+        }
+
+        fn check(&self, value: &String) -> bool {
+            self.value == *value
+        }
+
+        fn check_and_set(&mut self, value: &String) -> bool {
+            let exists = self.check(value);
+            if !exists {
+                self.set(value);
+            }
+            exists
+        }
+
+        fn is_full(&self) -> bool {
+            false
+        }
+
+        fn get_container_details(&mut self) -> &mut ContainerDetails {
+            unimplemented!("Not needed for this test")
+        }
+
+        fn get_usage(&self) -> f32 {
+            0.0
+        }
+
+        fn get_num_writes(&self) -> u64 {
+            0
+        }
+
+        fn set_num_writes(&mut self, _value: u64) {}
+
+        fn get_num_max_writes(&self) -> u64 {
+            100
+        }
+
+        fn set_num_max_writes(&mut self, _value: u64) {}
+
+        fn save_content(&mut self, _file: &mut File) {}
+
+        fn load_content(&mut self, _file: &mut File) {}
+    }
+
+    #[test]
+    fn test_acquire_release() {
+        let mut container = MockContainer {
+            acquired: false,
+            value: String::new(),
+        };
+
+        container.acquire();
+        assert!(container.acquired, "Container should be acquired");
+
+        container.release();
+        assert!(!container.acquired, "Container should be released");
+    }
+
+    #[test]
+    fn test_check_and_set() {
+        let mut container = MockContainer {
+            acquired: false,
+            value: String::new(),
+        };
+
+        let test_value = String::from("test");
+        
+        // First check should return false and set the value
+        assert!(!container.check_and_set(&test_value));
+        
+        // Second check should return true as value exists
+        assert!(container.check_and_set(&test_value));
+    }
+
     #[test]
     fn it_works() {
         let result = 2 + 2;
