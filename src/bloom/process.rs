@@ -44,9 +44,9 @@ pub fn process(params: &mut Params) {
                     continue;
                 }
             };
-            
+
             line_idx += 1;
-            
+
             // Remove trailing newline if present
             if buf.last() == Some(&b'\n') {
                 buf.pop();
