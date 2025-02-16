@@ -27,7 +27,14 @@ pub fn process(params: &mut Params) {
     let mut line_idx: i64 = 0;
 
     {
-        let mut stdout_lock = BufWriter::with_capacity(BUFFER_CAPACITY, handle);
+        let mut stdout_lock = if params.line_buffered {
+            // Use small buffer for line buffering
+            BufWriter::with_capacity(1024, handle)
+        } else {
+            // Use larger buffer for block buffering
+            BufWriter::with_capacity(BUFFER_CAPACITY, handle)
+        };
+
         let stdin = stdin().lock();
         let mut reader = BufReader::new(stdin);
         let mut buf = Vec::new();
@@ -52,11 +59,19 @@ pub fn process(params: &mut Params) {
 
             // Create a String if valid UTF-8, otherwise use raw bytes
             match String::from_utf8(buf.clone()) {
-                Ok(line) => process_line(&line, params, &mut curr_container_idx, &mut stdout_lock),
+                Ok(line) => {
+                    process_line(&line, params, &mut curr_container_idx, &mut stdout_lock);
+                    if params.line_buffered {
+                        stdout_lock.flush().unwrap();
+                    }
+                },
                 Err(_) => {
                     // Handle invalid UTF-8 by using raw bytes
                     stdout_lock.write_all(&buf).unwrap();
                     stdout_lock.write_all(b"\n").unwrap();
+                    if params.line_buffered {
+                        stdout_lock.flush().unwrap();
+                    }
                 }
             }
         }
