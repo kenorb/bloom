@@ -61,7 +61,8 @@ pub struct Params {
     containers: Vec<Box<dyn Container>>,
     silent: bool,
     inverse: bool,
-    debug_internal: bool
+    debug_internal: bool,
+    line_buffered: bool  // New field for buffering mode
 }
 
 fn print_help() {
@@ -107,6 +108,9 @@ fn print_help() {
     println!();
     println!("  -s,  --silent                               Performs processing but doesn't output anything except -d debug info.");
     println!();
+    println!("  --line-buffered                            Use line buffering for output (default: block buffering).");
+    println!("  --block-buffered                           Use block buffering for output (default).");
+    println!();
     println!("EXAMPLES:");
     println!();
     println!("  - Will use and write two bloom filter files with maximum of 10 lines and 0.01 error rate each file. All other lines");
@@ -125,7 +129,8 @@ fn main() {
         containers: Vec::new(),
         silent: false,
         inverse: false,
-        debug_internal: false
+        debug_internal: false,
+        line_buffered: false  // Default to block buffering
     };
 
     // List of passed file paths.
@@ -283,6 +288,10 @@ fn main() {
 
             // Silent mode.
             "-s" | "--silent" => params.silent = true,
+
+            // Buffering mode options
+            "--line-buffered" => params.line_buffered = true,
+            "--block-buffered" => params.line_buffered = false,
 
             // Help.
             "-h" | "--help" => {
