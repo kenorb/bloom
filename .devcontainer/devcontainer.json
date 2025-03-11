@@ -29,7 +29,11 @@
 		"ghcr.io/devcontainers-extra/features/pipx-package:1": {},
 		"ghcr.io/devcontainers/features/rust:1": {}
 		//
-	},
+  },
+  "tasks": {
+    "test": "cargo test --verbose",
+    "build": "cargo build --verbose"
+  },
 	// Configure tool-specific properties.
 	// "customizations": {},
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.

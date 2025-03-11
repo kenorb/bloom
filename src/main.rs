@@ -324,7 +324,7 @@ fn main() {
         params.write_mode = true;
     }
 
-    if !file_paths.isEmpty() && constructions_details.len() > 1 && constructions_details.len() != file_paths.len() {
+    if !file_paths.is_empty() && constructions_details.len() > 1 && constructions_details.len() != file_paths.len() {
         eprintln!("Error: Number of passed -xls / -bls / -ble parameters should be exactly zero or one or match the number of file paths.");
         std::process::exit(1);
     }
