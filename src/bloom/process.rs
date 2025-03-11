@@ -45,7 +45,9 @@ pub fn process(params: &mut Params) {
                 Ok(0) => break, // EOF
                 Ok(n) => n,
                 Err(e) => {
-                    eprintln!("Error reading line {}: {}", line_idx, e);
+                    if !params.silent_warnings {
+                        eprintln!("Error reading line {}: {}", line_idx, e);
+                    }
                     continue;
                 }
             };
