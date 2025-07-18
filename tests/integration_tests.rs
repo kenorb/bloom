@@ -85,3 +85,29 @@ fn test_deduplication_with_invalid_utf8() {
         String::from_utf8_lossy(line) == "valid line"
     ), "Should contain 'valid line'");
 }
+
+#[test]
+fn test_silent_warnings() {
+    let mut child = Command::new("./target/debug/bloom")
+        .arg("-sw")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn bloom process");
+
+    let mut stdin = child.stdin.take().expect("Failed to get stdin");
+
+    // Write some invalid UTF-8 sequences to trigger warnings
+    let invalid_sequence = b"invalid \xFF\xFE line\n";
+    stdin.write_all(invalid_sequence).unwrap();
+    stdin.write_all(invalid_sequence).unwrap();
+
+    drop(stdin);
+
+    let output = child.wait_with_output().expect("Failed to wait on bloom");
+    let stderr_str = String::from_utf8(output.stderr).expect("Stderr not UTF-8");
+
+    // Check that no warnings are present in stderr
+    assert!(stderr_str.is_empty(), "Expected no warnings, but got: {}", stderr_str);
+}

@@ -8,7 +8,6 @@ use crate::ContainerDetails;
 
 pub(crate) struct MemoryContainerXXH {
     container_details: ContainerDetails,
-    is_acquired: bool, // Whether container is in use.
     num_writes: u64, // Number of written keys/values.
     max_writes: u64, // Maximum number of added keys/values.
     bit_vec: BitVec, // Vector of bits used to store keys/values.
@@ -135,16 +134,6 @@ fn find_key(container: &MemoryContainerXXH, slot_idx: u64, hash: u64, num_tries:
 }
 
 impl Container for MemoryContainerXXH {
-    /// Acquires access to the content.
-    fn acquire(&mut self) {
-        self.is_acquired = true;
-    }
-
-    /// Releases access to the content.
-    fn release(&mut self) {
-        self.is_acquired = false;
-    }
-
     /// Inserts value into the filter.
     fn set(&mut self, value: &String) {
         let hash = xxh3_64(value.as_bytes());
@@ -228,7 +217,6 @@ impl MemoryContainerXXH {
         let key_bits: u8 = 20;
         let slot_internal_bits: u8 = 1; // We will only store boolean indicating whether slot is occupied.
         Self {
-            is_acquired: false,
             num_writes: 0,
             max_writes: container_details.construction_details.limit,
             bit_vec: BitVec::from_elem(container_details.construction_details.size as usize * 8, false),

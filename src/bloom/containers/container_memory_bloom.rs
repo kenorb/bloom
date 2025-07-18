@@ -7,23 +7,12 @@ use crate::ContainerDetails;
 
 pub(crate) struct MemoryContainerBloom {
     container_details: ContainerDetails,
-    is_acquired: bool, // Whether container is in use.
     num_writes: u64, // Number of written keys/values.
     max_writes: u64, // Maximum number of added keys/values.
     filter: Bloom<String>, // Bloom filter module.
 }
 
 impl Container for MemoryContainerBloom {
-    /// Acquires access to the content.
-    fn acquire(&mut self) {
-        self.is_acquired = true;
-    }
-
-    /// Releases access to the content.
-    fn release(&mut self) {
-        self.is_acquired = false;
-    }
-
     /// Inserts value into the filter.
     fn set(&mut self, value: &String) {
         self.filter.set(value);
@@ -128,7 +117,6 @@ impl MemoryContainerBloom {
     /// Creates instance of bloom filter from given container details.
     pub(crate) fn new_limit_and_error_rate(container_details: ContainerDetails) -> Self {
         Self {
-            is_acquired: false,
             num_writes: 0,
             max_writes: container_details.construction_details.limit,
             filter: Bloom::new_for_fp_rate(container_details.construction_details.limit as usize, container_details.construction_details.error_rate),
@@ -140,7 +128,6 @@ impl MemoryContainerBloom {
     /// Creates instance of bloom filter from given container details.
     pub(crate) fn new_limit_and_size(container_details: ContainerDetails) -> Self {
         Self {
-            is_acquired: false,
             num_writes: 0,
             max_writes: container_details.construction_details.limit,
             filter: Bloom::new(container_details.construction_details.size as usize, container_details.construction_details.limit as usize),

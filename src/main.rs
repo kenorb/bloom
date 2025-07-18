@@ -62,7 +62,8 @@ pub struct Params {
     silent: bool,
     inverse: bool,
     debug_internal: bool,
-    line_buffered: bool  // New field for buffering mode
+    line_buffered: bool,  // New field for buffering mode
+    silent_warnings: bool  // New field for silencing warnings
 }
 
 fn print_help() {
@@ -110,6 +111,7 @@ fn print_help() {
     println!();
     println!("  --line-buffered                            Use line buffering for output (default: block buffering).");
     println!("  --block-buffered                           Use block buffering for output (default).");
+    println!("  -sw,  --silent-warnings                    Silences warnings during processing.");
     println!();
     println!("EXAMPLES:");
     println!();
@@ -130,7 +132,8 @@ fn main() {
         silent: false,
         inverse: false,
         debug_internal: false,
-        line_buffered: false  // Default to block buffering
+        line_buffered: false,  // Default to block buffering
+        silent_warnings: false  // Default to not silencing warnings
     };
 
     // List of passed file paths.
@@ -292,6 +295,9 @@ fn main() {
             // Buffering mode options
             "--line-buffered" => params.line_buffered = true,
             "--block-buffered" => params.line_buffered = false,
+
+            // Silencing warnings
+            "-sw" | "--silent-warnings" => params.silent_warnings = true,
 
             // Help.
             "-h" | "--help" => {

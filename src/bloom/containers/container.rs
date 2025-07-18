@@ -13,12 +13,6 @@ const MAGIC: u32 = 0xB1008811;
 
 pub trait Container
 {
-    /// Acquires access to the content.
-    fn acquire(&mut self);
-
-    /// Releases access to the content.
-    fn release(&mut self);
-
     /// Inserts value into the filter.
     fn set(&mut self, value: &String);
 
@@ -182,19 +176,10 @@ mod tests {
 
     // Mock implementation for testing
     struct MockContainer {
-        acquired: bool,
         value: String,
     }
 
     impl Container for MockContainer {
-        fn acquire(&mut self) {
-            self.acquired = true;
-        }
-
-        fn release(&mut self) {
-            self.acquired = false;
-        }
-
         fn set(&mut self, value: &String) {
             self.value = value.clone();
         }
@@ -241,23 +226,8 @@ mod tests {
     }
 
     #[test]
-    fn test_acquire_release() {
-        let mut container = MockContainer {
-            acquired: false,
-            value: String::new(),
-        };
-
-        container.acquire();
-        assert!(container.acquired, "Container should be acquired");
-
-        container.release();
-        assert!(!container.acquired, "Container should be released");
-    }
-
-    #[test]
     fn test_check_and_set() {
         let mut container = MockContainer {
-            acquired: false,
             value: String::new(),
         };
 
